@@ -1,0 +1,30 @@
+---
+title: "3_EVD_Drainage"
+author: "Meg Hutch"
+date: "4/13/2021"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+```
+
+```{r}
+load("processed_data/icp_cleaned.rda")
+```
+
+```{r}
+evd <- icp %>% 
+  select(Study_ID, Date_ICP, `EVD Output`) %>%
+  rename('EVD' = `EVD Output`) %>%
+  na.omit() %>%
+  group_by(Study_ID) %>%
+  arrange(Study_ID, Date_ICP) %>%
+  rename('Date_EVD' = Date_ICP, 
+         'CSF' = EVD)
+```
+
+```{r}
+save(evd, file = "processed_data/evd.rda")
+```
+

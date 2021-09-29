@@ -1,0 +1,174 @@
+---
+title: "1_Clean_ICP_Pupil_Data"
+author: "Meg Hutch"
+date: "12/21/2020"
+output: html_document
+---
+
+# **ICP and Pupil Reactivity**
+
+This script performs the initial cleaning of pupil and icp measurements. Additional data exploration is also included.
+
+
+```{r Packages, results = "hide", message = FALSE, warning = FALSE}
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+```
+
+```{r Load Data, message=FALSE}
+load("raw_data/all_pupils_cleaned.rda")
+load("raw_data/all_icp.rda")
+```
+
+# Pre-processing 
+
+```{r Rename Dataframes}
+#Change Pupil and ICP dataframe names
+pupils <- all_pupils_cleaned
+icp <- all_icp
+
+#Remove old dataframes
+rm(all_pupils_cleaned)
+rm(all_icp)
+```
+
+## **Clean ICP Data**
+
+```{r Change ICP Date Column}
+colnames(icp)[3] <- "Date_ICP"
+
+# This column was the old ID system used. Now we will use the Study_ID
+icp$ID <- NULL
+```
+
+### Remove Outliers
+
+CO explained that we should remove ICP values < -15 and ICP > 70. These are likely instances when the monitor was not working correctly. For measurements > 70, it will at least allow us to be a bit more conservative trusting the validity of high ICP measurements.
+
+```{r Remove ICP outliers, warning = FALSE}
+icp <- icp %>% filter(!ICP < -15)
+icp <- icp %>% filter(!ICP > 70)
+```
+
+### Bilateral ICP Monitors/Remove Measurements
+
+Some patients have two EVD/ICP monitors at the same time as seen when there are measurements in the 'ICP 2' column. Analysis by Kurt showed that there is a significant difference between the two separate measurements for patients. For this reason, we need a method of excluding the ICP 2 measurement. 
+
+I have decided to exlcude measurements that occur within 24 hours of a bilateral ICP measurement. This was decided because some patients oscillate between having multiple stretches with or without bilateral measurements - sometimes these stretches are every 10-13 hours. Thus, in order to standardize measurement inclusion among these 11 patients, we keep the measurements of patients with bilateral monitors only if they have single ICP measurements that don't fall within 24 hours of a bilateral measurement. This will hopefully also prevent inclusion of ICP measurements that may not be accurate due to a blocked EVD which was the impetus for the second monitor.
+
+```{r Bilateral EVDs}
+#Filter for the  measurements that have a value in the 'ICP 2' column. These are patients who had bilateral ICP measurements. 
+icp2 <- icp %>% filter(!is.na(`ICP 2`))
+nrow(unique(data.frame(icp2$Study_ID))) #11 patients with bilteral monitors
+
+#From exploring the data by eye, it appears that some patients oscillate between having one  monitor and two. Determine the longest amount of time patients go in between their second ICP measurements
+icp2 <- icp2 %>% group_by(Study_ID) %>% arrange(Date_ICP) %>% mutate(lagDate_ICP = lag(Date_ICP)) %>% mutate(timediff_hours = difftime(Date_ICP, lagDate_ICP, unit = "hours"))
+
+#Identify the maximum time difference between the ICP 2 measurements- This will give us an idea as to how frequently measurements may be recorded from 2 monitors in the patient.
+max_time <- icp2 %>% select(Study_ID, timediff_hours) %>% group_by(Study_ID) %>% top_n(n=1) %>% slice(1L) %>% arrange(timediff_hours) #Some patients go up to 10-13 hours when they may have only one ICP measurement before having two ICP measurements and then back to only one ICP measurement. Study ID 219, explored more below, has a single ICP measurement seeminfly randomly - I'm wondering if this could be an error.
+write.csv(max_time, file = "results/BilateralEVD_TimeChart.csv", row.names=FALSE)
+
+#Select the ids of the patients with bilateral monitors
+icp2_ids <- icp2 %>% select(Study_ID) %>% arrange(Study_ID) %>% distinct
+
+#Return all the ICP data for patients within the icp2_ids list. This will then create a data frame which will also include the incidences when they may have only had one monitor
+icp2 <- icp %>% filter(Study_ID %in% icp2_ids$Study_ID)
+
+#View the data 
+#View(icp2 %>% filter(Study_ID == 90)) #If to perform the 24 hour exclusion function below, Study_ID  90 will not be in the analysis. 
+#View(icp2 %>% filter(Study_ID == 7)) #Study_ID 7 oscillates in 12-13 hour time windows regarding whether he has two ICP monitors
+#View(icp2 %>% filter(Study_ID == 72)) #Has about 10 hours between 'ICP 2` measurements
+#View(icp2 %>% filter(Study_ID == 219)) #Has 1 time interval of 2 ICP monitor measurements - Does have an isolated ICP 2 measurement at a seemingly random point in time. Maybe an error?
+
+#Create a function that for every 'ICP 2' measurement we exclude the measurements that are within 24 hours prior andwithin 24 hours after. The reasoning behind the 24 hours is that I've noticed that a patient may have several intervals when they have only one monitor and then times when they have two. This criteria will enact more stringent inclusion criteria for these patients but it will also help standarize how we are managing this problem and I think it's a conservative approach in order to prevent measurements that were taken maybe before the start of the second monitor but that may be inaccurate (because the monitor was malfunctioning/blocked, thus the reason they required bilateral monitors to begin with).
+
+#Determine the time difference between ICP and ICP 2 by binding all the ICP to ICP2 after splitting into separate dataframes. Then remove all ICP2 measurments that are within 24 hours of an ICP 1 measurement
+icp_1 <- icp2 %>% select(Study_ID, Date_ICP, ICP)
+icp_2 <- icp2 %>% select(Study_ID,  Date_ICP, `ICP 2`) %>% filter(!is.na(`ICP 2`))
+
+#Bind both dataframes together and then filter so that the df maintains the measurements that are within 24 hours. We will then exclude these from the main ICP dataframe.
+temp_ICP <- icp_1 %>%
+  left_join(icp_2, by="Study_ID")%>%
+  mutate(timediff = difftime(Date_ICP.y, Date_ICP.x, units = "hours"))%>%
+  group_by(Study_ID)%>%
+  filter((timediff >=-24 & timediff <= 24))
+
+#Need to remove the Date_ICP.x and Date_ICP.y
+Date_ICPx <- temp_ICP %>% select(Study_ID, Date_ICP.x)
+Date_ICPy <- temp_ICP %>% select(Study_ID, Date_ICP.y) 
+
+colnames(Date_ICPx)[2] <- "Date_ICP"
+colnames(Date_ICPy)[2] <- "Date_ICP"
+
+#Remove the Date_ICPx and Date_ICPy dataframes containing the measurements within 24 hours before or after an 'ICP 2' measurement.
+icp <- icp %>% anti_join(Date_ICPx)
+icp <- icp %>% anti_join(Date_ICPy)
+
+#Remove the now null 'ICP 2' column
+icp$`ICP 2` <- NULL
+
+#Remove unncessary dataframes
+rm(Date_ICPx)
+rm(Date_ICPy)
+rm(icp_1)
+rm(icp_2)
+rm(icp2)
+rm(temp_ICP)
+rm(max_time)
+```
+
+### Identify the first ICP measurement for patients
+
+```{r}
+# Arrange all ICP measurements by study_id and date and identify the first measurement
+icp <- icp %>% group_by(Study_ID) %>%
+  arrange(Study_ID, Date_ICP) %>%
+  mutate(first_icp_date = first(Date_ICP)) 
+```
+
+## **Clean Pupil Data**
+
+### Clean Left and Right Eye Dates
+
+In our methods for cleaning up raw pupil data, we have code that consolidates pupil measurements in the most conservative way in cases when there are multiple pupil measurements within 5 minutes. In these cases, we sometimes have different dated measurements between the L and R eyes (within 5 minutes or so). To facilatate future analyses, we choose the date with the eye that has the minimum (lowest) NPi. 
+
+```{r Modifying the Date Column, results = "hide", message = FALSE, warning = FALSE}
+#Subset by the Left and Right eye and then change column names
+min_left <- pupils %>% filter(minEye == "Left")
+min_left$Date_NPi <- min_left$`Date Pupil Left`
+
+min_right <- pupils %>% filter(minEye == "Right")
+min_right$Date_NPi <- min_right$`Date Pupil Right`
+
+#Merge subsetted pupils back together, now the Date Pupil column is modified to contain the date of the eye with the minNPi
+pupils <- rbind(min_left, min_right) 
+
+#Remove subset dataframes
+rm(min_left)
+rm(min_right)
+```
+
+### Modify names of dates
+
+```{r}
+#Remove other Pupil date columns - the Date is the date of the eye with the minNPi - we also have columns for the Left and the Right Eye
+pupils$`Date Pupil Left` <- NULL
+pupils$`Date Pupil Right` <- NULL
+```
+
+### Subset pupil data by those with ICP monitors
+
+Keep in mind some of these measurements may not come in proximity to ICP measurements. Additionally, the pupils or ICP data could be from different admissions
+
+```{r}
+icp_ids <- icp %>% select(Study_ID) %>% distinct
+pupils <- pupils %>% filter(Study_ID %in% icp_ids$Study_ID)
+```
+
+**Save Data**
+
+```{r}
+save(icp, file = "processed_data/icp_cleaned.rda")
+save(pupils, file = "processed_data/pupils_cleaned.rda")
+```

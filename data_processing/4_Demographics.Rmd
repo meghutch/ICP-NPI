@@ -1,0 +1,635 @@
+---
+title: "4_Demographics"
+author: "Meg Hutch"
+date: "September 22, 2019"
+output: html_document
+---
+
+Objective: This script processes demographic data from REDCap for our ICP Cohort
+
+
+# Packages
+```{r Load Packages}
+library(dplyr)
+library(pastecs)
+```
+
+# Import Demographics Data
+```{r}
+demo <- read.csv("raw_data/BWHMGHPupillometry20_DATA_2020-08-22_1531.csv")
+
+## separate file for surgery information
+surgery <- read.csv("raw_data/4.16.21 Craniectomy Partners Demographics copy.csv")
+```
+
+# Clean Up Data
+
+```{r}
+## separate surgery information from the REDCap data
+demo <- demo %>% filter(!redcap_repeat_instrument == "surgeries")
+demo$redcap_repeat_instrument <- NULL
+demo$redcap_repeat_instance <- NULL
+
+# Change record_id name
+colnames(demo)[1] <- "Study_ID"
+
+```
+
+
+# Race
+```{r}
+# 0, White | 1, Black or African American | 2, Asian | 3, Native Hawaiian or Other Pacific Islander | 4, American Indian or Alaska Native | 999, Other/Unknown												
+
+#Rename Race columns
+demo <- demo %>% rename(White = race___0,
+                        Black = race___1,
+                        Asian = race___2, 
+                        Nat.Hawaiian_Pac.Isl = race___3, 
+                        Amer.Ind_Alaska.Nat = race___4, 
+                        Other_Unknown_Race = race___999)
+
+#Create a multi_race category
+demo$Race_counts <- rowSums(demo[c(4:9)] == 1) #2 means multiple race 
+demo$Multi_Race <- ifelse(demo$Race_counts > 1, 1, 0)
+```
+
+# Rename Diagnosis Columns
+```{r}
+# 0, IPH (Intraparenchymal Hemorrhage) | 1, SAH (Subarachnoid Hemorrhage) | 2, SDH (Subdural Hemorrhage) | 3, EDH (Epidural Hemorrhage) | 4, TBI (Traumatic Brain Injury) | 5, Anterior Circulation Stroke | 6, Posterior Circulation Stroke | 7, Status Epilepticus | 8, IVH (Intraventricular Hemorrhage) | 9, Tumor | 10, Infection | 11, Hydrocephalus | 12, Cerebral Sinus Venous Thrombosis | 999, Other
+
+# Rename Diangoses columns
+demo <- demo %>% rename(IPH_Dx = primary_diagnosis___0, 
+                      SAH_Dx = primary_diagnosis___1, 
+                      SDH_Dx = primary_diagnosis___2, 
+                      EDH_Dx = primary_diagnosis___3, 
+                      TBI_Dx = primary_diagnosis___4, 
+                      AC.Stroke_Dx = primary_diagnosis___5, 
+                      PC.Stroke_Dx = primary_diagnosis___6, 
+                      Status.E_Dx = primary_diagnosis___7, 
+                      IVH_Dx = primary_diagnosis___8, 
+                      Tumor_Dx = primary_diagnosis___9, 
+                      Infection_Dx = primary_diagnosis___10, 
+                      Hydrocephalus_Dx = primary_diagnosis___11, 
+                      CVST_Dx = primary_diagnosis___12,
+                      Other_Dx = primary_diagnosis___999)
+
+# Final Diagnosis: 0, Spontaneous IPH | 1, Aneurysmal SAH | 2, Stroke | 3, Parenchymal TBI | 4, Brain Tumor | 5, Isolated Hydrocephalus without IVH | 6, Seizure or Status | 7, Infection | 8, SDH | 9, EDH | 10, Non aneurysmal SAH | 11, CSVT | 12, Isolated IVH | 13, Hypoxic Ischemic Injury | 999, Other
+demo <- demo %>% rename(other_desc_final = other_final)
+
+demo <- demo %>% rename(Spon.IPH_final = final_dx___0, 
+                      ASah_final = final_dx___1, 
+                      stroke_final = final_dx___2, 
+                      parenchymal_tbi_final = final_dx___3, 
+                      brain_tumor_final = final_dx___4, 
+                      isolated_hydro_final = final_dx___5, 
+                      seizure_status_final = final_dx___6, 
+                      infection_final = final_dx___7, 
+                      sdh_final = final_dx___8, 
+                      edh_final = final_dx___9, 
+                      non_asah_final = final_dx___10,
+                      cvst_final = final_dx___11,
+                      isolated_ivh_final = final_dx___12,
+                      hypoxic_ischemic_injury_final = final_dx___13,
+                      other_final = final_dx___999)
+```
+
+# Rename pathology side varaibles
+```{r}
+# 1, ACA territory | 2, MCA territory | 3, PCA territory | 4, Cerebellar | 5, Midbrain | 6, Pons | 7, Medulla | 9, Thalamus | 10, Watershed | 11, Frontal Lobe | 12, Temporal Lobe | 13, Parietal Lobe | 14, Occipital Lobe | 15, Corpus Callosum | 16, Caudate | 17, Internal Capsule | 18, Basal Ganglia | 19, Insula | 20, Putamen | 21, Globus Pallidus | 22, Corona Radiata | 23, Periventricular white matter | 24, Subcortical white matter | 25, Cingulate Gyrus | 26, Scattered Bilateral Cerebral | 27, Spine | 28, Ventricles | 29, Hippocampus | 999, Other
+
+demo <- demo %>% rename(ACA_Path = pathology_side___1, 
+                        MCA_Path = pathology_side___2, 
+                        PCA_Path = pathology_side___3, 
+                        Cerebellar_Path = pathology_side___4, 
+                        Midbrain_Path = pathology_side___5, 
+                        Pons_Path = pathology_side___6, 
+                        Medulla_Path = pathology_side___7, 
+                        Thalamus_Path = pathology_side___9, 
+                        Watershed_Path = pathology_side___10, 
+                        Frontal_lobe_Path = pathology_side___11, 
+                        Temporal_lobe_Path = pathology_side___12, 
+                        Parietal_lobe_Path = pathology_side___13, 
+                        Occipital_lobe_Path = pathology_side___14, 
+                        Corpus_Callosum_Path = pathology_side___15, 
+                        Caudate_Path = pathology_side___16, 
+                        Internal_Capsule_Path = pathology_side___17, 
+                        Basal_ganglia_Path = pathology_side___18, 
+                        Insula_Path = pathology_side___19, 
+                        Putamen_Path = pathology_side___20, 
+                        Globus_Pallidus_Path = pathology_side___21, 
+                        Corona_Radiata_Path = pathology_side___22, 
+                        Periventricular_White_Matter_Path = pathology_side___23, 
+                        Subcortical_White_Matter_Path = pathology_side___24, 
+                        Cingulate_Gyrus_Path = pathology_side___25, 
+                        Scattered_Bilateral_Cerebral_Path = pathology_side___26, 
+                        Spine_Path = pathology_side___27, 
+                        Ventricles_Path = pathology_side___28, 
+                        Hippocampus_Path = pathology_side___29, 
+                        Other_Path = pathology_side___999, 
+                        Other_Desc_Path = other_pathology)
+
+#Add suffix to indicate columns for pathology side - This indicates L, R, or Bilateral - Should be ACA to Hippocampus primary
+colnames(demo)[87:111] <- paste(colnames(demo)[87:111], "Path_Side", sep = "_")
+
+#Change back mca_complete_incomplte
+colnames(demo)[89] <- "mca_complete_incomplete"
+
+# Recode all pathsides
+demo$aca_Path_Side <- recode(demo$aca_Path_Side, '1' = "Left", '2' = "Right", '3' = "Both", '999' = "Unspecified")
+
+demo$mca_Path_Side <- recode(demo$mca_Path_Side, '1' = "Left", '2' = "Right", '3' = "Both", '999' = "Unspecified")
+
+# 1, Complete | 0, Incomplete | 888, Not specified | 999, Unclear
+demo$mca_complete_incomplete <- recode(demo$mca_complete_incomplete, '1' = "Complete", '0' = "Incomplete", '888' = "Not Specified", '999' = "Unclear")
+
+demo$pca_Path_Side <- recode(demo$pca_Path_Side, '1' = "Left", '2' = "Right", '3' = "Both", '999' = "Unspecified")
+
+demo$cerebellar_Path_Side <- recode(demo$cerebellar_Path_Side, '1' = "Left", '2' = "Right", '3' = "Both", '999' = "Unspecified")
+
+demo$midbrain_Path_Side <- recode(demo$midbrain_Path_Side, '1' = "Left", '2' = "Right", '3' = "Both", '999' = "Unspecified")
+
+demo$pons_Path_Side <- recode(demo$pons_Path_Side, '1' = "Left", '2' = "Right", '3' = "Both", '999' = "Unspecified")
+
+demo$medulla_Path_Side <- recode(demo$medulla_Path_Side, '1' = "Left", '2' = "Right", '3' = "Both", '999' = "Unspecified")
+
+demo$thalamus_Path_Side <- recode(demo$thalamus_Path_Side, '1' = "Left", '2' = "Right", '3' = "Both", '999' = "Unspecified")
+
+demo$frontal_Path_Side <- recode(demo$frontal_Path_Side, '1' = "Left", '2' = "Right", '3' = "Both", '999' = "Unspecified")
+
+demo$temporal_Path_Side <- recode(demo$temporal_Path_Side, '1' = "Left", '2' = "Right", '3' = "Both", '999' = "Unspecified")
+
+demo$parietal_Path_Side <- recode(demo$parietal_Path_Side, '1' = "Left", '2' = "Right", '3' = "Both", '999' = "Unspecified")
+
+demo$occipital_Path_Side <- recode(demo$occipital_Path_Side, '1' = "Left", '2' = "Right", '3' = "Both", '999' = "Unspecified")
+
+demo$corpus_callosum_Path_Side <- recode(demo$corpus_callosum_Path_Side, '1' = "Left", '2' = "Right", '3' = "Both", '999' = "Unspecified")
+
+demo$caudate_Path_Side <- recode(demo$caudate_Path_Side, '1' = "Left", '2' = "Right", '3' = "Both", '999' = "Unspecified")
+
+demo$internal_capsule_Path_Side <- recode(demo$internal_capsule_Path_Side, '1' = "Left", '2' = "Right", '3' = "Both", '999' = "Unspecified")
+
+demo$basal_ganigla_Path_Side <- recode(demo$basal_ganglia_Path_Side, '1' = "Left", '2' = "Right", '3' = "Both", '999' = "Unspecified")
+
+demo$insula_Path_Side <- recode(demo$insula_Path_Side, '1' = "Left", '2' = "Right", '3' = "Both", '999' = "Unspecified")
+
+demo$putamen_Path_Side <- recode(demo$putamen_Path_Side, '1' = "Left", '2' = "Right", '3' = "Both", '999' = "Unspecified")
+
+demo$globus_pallidus_Path_Side <- recode(demo$globus_pallidus_Path_Side, '1' = "Left", '2' = "Right", '3' = "Both", '999' = "Unspecified")
+
+demo$corona_radiata_Path_Side <- recode(demo$corona_radiata_Path_Side, '1' = "Left", '2' = "Right", '3' = "Both", '999' = "Unspecified")
+
+demo$periventricular_white_matter_Path_Side <- recode(demo$periventricular_white_matter_Path_Side, '1' = "Left", '2' = "Right", '3' = "Both", '999' = "Unspecified")
+
+demo$subcortical_white_matter_Path_Side <- recode(demo$subcortical_white_matter_Path_Side, '1' = "Left", '2' = "Right", '3' = "Both", '999' = "Unspecified")
+
+demo$cingulate_gyrus_Path_Side <- recode(demo$cingulate_gyrus_Path_Side, '1' = "Left", '2' = "Right", '3' = "Both", '999' = "Unspecified")
+
+demo$hippocampus_primary_Path_Side <- recode(demo$hippocampus_primary_Path_Side, '1' = "Left", '2' = "Right", '3' = "Both", '999' = "Unspecified")
+```
+
+# Create level names for variables that are coded
+```{r}
+# gender: 0, Female | 1, Male | 999, Other/Unknown
+demo$gender <- recode(demo$gender, '0' = "Female", '1' = "Male", '999' = "Unknown")
+
+# ethnicity: 0, Not Hispanic or Latino | 1, Hispanic or Latino | 999, Unknown
+demo$ethnicity <- recode(demo$ethnicity, '0' = "Not_Hispanic", '1' = "Hispanic", '999' = "Unknown")
+
+# IPH type:1, Hemorrhagic conversion | 2, Spontaneous | 3, Traumatic | 4, Vascular | 5, Secondary to tumor | 999, Unspecified
+demo$iph_type <- recode(demo$iph_type, '1' = "Hem_Conversion", '2' = "Spontaneous", '3' = "Traumatic", '4' = "Vascular", '5' = "Sec_to_Tumor", '999' = "Unspecified")
+
+# Vascular etiology: 1, AVM | 2, Aneurysm | 999, Unspesified
+demo$vascular_etiology <- recode(demo$vascular_etiology, '1' = "AVM", '2' = "Aneurysm", '999' = "Unspecified")
+
+# ac IPH: 1, Yes | 0, No | 999, Indeterminate/Unclear
+demo$ac_iph <- recode(demo$ac_iph, '0' = "No", '1' = "Yes", '999' = "Indeterminate/Unclear")
+
+# SAH type: 1, Aneurysmal | 2, Non-aneurysmal | 999, Unspecified
+demo$sah_type <- recode(demo$sah_type, '1' = "Aneurysmal", '2' = "Non-Aneurysmal", '999' = "Unspecified")
+
+# ac_sah: 1, Yes | 0, No | 999, Indeterminate/Unclear
+demo$ac_sah <- recode(demo$ac_sah, '0' = "No", '1' = "Yes", '999' = "Unspecified")
+
+# sdh etiology: 1, Traumatic | 2, Spontaneous | 999, Unspecified
+demo$sdh_etiology <- recode(demo$sdh_etiology, '1' = "Traumatic", '2' = "Spontaenous", '999' = "Unspecified")
+
+# sdh acuity: 0, Non-acute (fall/injury > 48 hrs) | 1, Acute (fall/injury < 48 hrs) | 2, Acute on chronic | 999, Unspecified
+demo$sdh_acuity <- recode(demo$sdh_acuity, '0' = "Non-acute (> 48 Hours)", '1' = "Acute (< 48 Hours)", '2' = "Acute on Chronic", '999' = "Unspecified")
+
+# ac sdh: 1, Yes | 0, No | 999, Indeterminate/Unclear
+demo$ac_sdh <- recode(demo$ac_sdh, '0' = "No", '1' = "Yes", '999' = "Indeterminate/Unclear")
+
+# tbi location: 1, Diffuse | 2, Focal | 3, Multifocal | 999, Unspecified
+demo$tbi_location <- recode(demo$tbi_location, '1' = "Diffuse", '2' = "Focal", '3' = "Multifocal", '999' = "Unspecified")
+
+# focal tbi: 1, Blunt | 2, Penetrating | 999, Unspecified
+demo$focal_tbi_type <- recode(demo$focal_tbi_type, '1' = "Blunt", '2' = "Penetrating", '999' = "Unspecified")
+
+# ac tbi: 1, Yes | 0, No | 999, Indeterminate/Unclear
+demo$ac_tbi <- recode(demo$ac_tbi, '0' = "No", '1' = "Yes", '999' = "Indeterminate/Unclear")
+
+# mass effect: 1, Yes | 2, No | 999, Indeterminate
+demo$mass_effect <- recode(demo$mass_effect, '2' = "No", '1' = "Yes", '999' = "Indeterminate/Unclear")
+
+# mass effect side: 1, Left | 2, Right | 999, Indeterminate
+demo$mass_effect_side <- recode(demo$mass_effect_side, '1' = "Left", '2' = "Right", '999' = "Indeterminate/Unclear")
+
+# mls: 1, Yes | 0, No
+demo$mls <- recode(demo$mls, '1' = "Yes", '0' = "No")
+
+# herniation: 1, Yes | 0, No
+demo$herniation <- recode(demo$herniation, '1' = "Yes", '0' = "No")
+
+#primary_diagnosis_4: this is really for edh_ac: 1, Yes | 0, No | 999, Indeterminate/ Unclear
+demo$primary_diagnosis_4 <- recode(demo$primary_diagnosis_4, '0' = "No", '1' = "Yes", '999' = "Indeterminate/Unclear")
+
+# change column name
+demo <- demo %>% rename("ac_edh" = "primary_diagnosis_4")
+```
+
+# Herniation Type
+```{r}
+# herniation type: 1, Subfalcine | 2, Uncal | 3, Transtentorial | 4, Upward Cerebellar | 5, Tonsillar | 6, Upward Transtentorial | 999, Unspecified
+demo <- demo %>% rename(Herniation_Subfalcine = herniation_type___1, 
+                        Herniation_Uncal = herniation_type___2, 
+                        Herniation_TransTentorial = herniation_type___3, 
+                        Herniation_Up_Cerebellar = herniation_type___4, 
+                        Herniation_Tonsillar = herniation_type___5, 
+                        Herniation_Up_Transtentorial = herniation_type___6, 
+                        Herniation_Unspecified = herniation_type___999) 
+```
+
+# Secondary Diagnosis
+```{r}
+# 0, IPH (Intraparenchymal Hemorrhage) | 1, SAH (Subarachnoid Hemorrhage) | 2, SDH (Subdural Hemorrhage) | 3, EDH (Epidural Hemorrhage) | 4, TBI (Traumatic Brain Injury) | 5, Anterior Circulation Stroke | 6, Posterior Circulation Stroke | 7, Status Epilepticus | 8, IVH (Intraventricular Hemorrhage) | 9, Tumor | 10, Infection | 11, Cerebral Edema | 12, Hydrocephalus | 13, Cerebral Sinus Venous Thrombosis | 999, Other
+demo <- demo %>% rename(IPH_Dx2 = secondary_diagnosis___0, 
+                      SAH_Dx2 = secondary_diagnosis___1, 
+                      SDH_Dx2 = secondary_diagnosis___2, 
+                      EDH_Dx2 = secondary_diagnosis___3, 
+                      TBI_Dx2 = secondary_diagnosis___4, 
+                      AC.Stroke_Dx2 = secondary_diagnosis___5, 
+                      PC.Stroke_Dx2 = secondary_diagnosis___6, 
+                      Status.E_Dx2 = secondary_diagnosis___7, 
+                      IVH_Dx2 = secondary_diagnosis___8, 
+                      Tumor_Dx2 = secondary_diagnosis___9, 
+                      Infection_Dx2 = secondary_diagnosis___10, 
+                      Cerebral_Edema_Dx2 = secondary_diagnosis___11, 
+                      Hydrocephalus_Dx2 = secondary_diagnosis___12,
+                      CVST_Dx2 = secondary_diagnosis___13,
+                      Other_Dx2 = secondary_diagnosis___999)
+
+# Notes
+demo <- demo %>% rename(other_desc_dx2 = other_secondary_diagnosis)
+```
+
+# Code additional information - secondary diagnosis
+```{r}
+#iph_type2: 1, Hemorrhagic conversion | 2, Spontaneous | 3, Traumatic | 4, Vascular | 5, Secondary to tumor | 999, Unspecified
+demo$iph_type2 <- recode(demo$iph_type2, '1' = "Hem_Conversion", '2' = "Spontaneous", '3' = "Traumatic", '4' = "Vascular", '5' = "Sec_to_Tumor", '999' = "Unspecified")
+
+#vascular_etiology_secondary: 1, AVM | 2, Aneurysm | 999, Unspecified
+demo$vascular_etiology_secondary <- recode(demo$vascular_etiology_secondary, '1' = "AVM", '2' = "Aneurysm", '999' = "Unspecified")
+
+#ac_iph2: 1, Yes | 0, No | 999, Indeterminate
+demo$ac_iph2 <- recode(demo$ac_iph2, '0' = "No", '1' = "Yes", '999' = "Indeterminate/Unclear")
+
+#sah_type2: 1, Aneurysmal | 2, Non-aneurysmal | 999, Unspecified
+demo$sah_type2 <- recode(demo$sah_type2, '1' = "Aneurysmal", '2' = "Non-Aneurysmal", '999' = "Unspecified")
+
+#ac_sah2: 1, Yes | 0, No | 999, Indeterminate
+demo$ac_sah2 <- recode(demo$ac_sah2, '0' = "No", '1' = "Yes", '999' = "Unspecified")
+
+#sdh_etiology2: 1, Traumatic | 2, Spontaneous | 999, Unspecified
+demo$sdh_etiology2 <- recode(demo$sdh_etiology2, '1' = "Traumatic", '2' = "Spontaenous", '999' = "Unspecified")
+
+#blood_thinners2: 1, Yes | 0, No | 999, Unspecified 
+demo$blood_thinners2 <- recode(demo$blood_thinners2, '0' = "No", '1' = "Yes", '999' = "Unspecified")
+
+#sdh_acuity2: 0, Non-acute (fall/injury > 48 hrs) | 1, Acute (fall/injury < 48 hrs) | 999, Unspecified
+demo$sdh_acuity2 <- recode(demo$sdh_acuity2, '0' = "Non-acute (> 48 Hours)", '1' = "Acute (< 48 Hours)", '999' = "Unspecified") 
+
+#ac_sdh2: 1, Yes | 0, No | 999, Indeterminate
+demo$ac_sdh2 <- recode(demo$ac_sdh2, '0' = "No", '1' = "Yes", '999' = "Indeterminate/Unclear")
+
+## 12.1.2019: TBI_Locations aren't running since this dataset does not have data for these variables
+## 01.09.2020: Also did not run; no data
+## 01.24.2020: Also did not run; no data
+## 08.22.2020: Also did not run; no data
+#tbi_location2: 1, Diffuse | 2, Focal | 999, Unspecified
+demo$tbi_location2 <- recode(demo$tbi_location2, '1' = "Diffuse", '2' = "Focal", '999' = "Unspecified")
+
+#focal_tbi_type2: 1, Blunt | 2, Penetrating | 999, Unspecified
+demo$focal_tbi_type2 <- recode(demo$focal_tbi_type2, '1' = "Blunt", '2' = "Penetrating", '999' = "Unspecified")
+
+#ac_tbi2: 1, Yes | 0, No | 999, Indeterminate
+demo$ac_tbi2 <- recode(demo$ac_tbi2, '0' = "No", '1' = "Yes", '999' = "Indeterminate/Unclear")
+```
+
+# Secondary Pathsides
+```{r}
+#1, ACA territory | 2, MCA territory | 3, PCA territory | 4, Cerebellar | 5, Midbrain | 6, Pons | 7, Medulla | 9, Thalamus | 10, Watershed | 11, Frontal Lobe | 12, Temporal Lobe | 13, Parietal Lobe | 14, Occipital Lobe | 15, Corpus Callosum | 16, Caudate | 17, Internal Capsule | 18, Basal Ganglia | 19, Insula | 20, Putamen | 21, Globus pallidus | 22, Corona Radiata | 23, Periventricular white matter | 24, Subcortical white matter | 25, Cingulate Gyrus | 26, Scattered Bilateral Cerebral | 27, Spine | 28, Ventricles | 29, Hippocampus | 999, Other
+
+demo <- demo %>% rename(ACA_Path2 = secondary_pathside___1, 
+                        MCA_Path2 = secondary_pathside___2, 
+                        PCA_Path2 = secondary_pathside___3, 
+                        Cerebellar_Path2 = secondary_pathside___4, 
+                        Midbrain_Path2 = secondary_pathside___5, 
+                        Pons_Path2 = secondary_pathside___6, 
+                        Medulla_Path2 = secondary_pathside___7, 
+                        Thalamus_Path2 = secondary_pathside___9, 
+                        Watershed_Path2 = secondary_pathside___10, 
+                        Frontal_lobe_Path2 = secondary_pathside___11, 
+                        Temporal_lobe_Path2 = secondary_pathside___12, 
+                        Parietal_lobe_Path2 = secondary_pathside___13, 
+                        Occipital_lobe_Path2 = secondary_pathside___14, 
+                        Corpus_Callosum_Path2 = secondary_pathside___15, 
+                        Caudate_Path2 = secondary_pathside___16, 
+                        Internal_Capsule_Path2 = secondary_pathside___17, 
+                        basal_ganglia_Path2 = secondary_pathside___18, 
+                        Insula_Path2 = secondary_pathside___19, 
+                        Putamen_Path2 = secondary_pathside___20, 
+                        Globus_Pallidus_Path2 = secondary_pathside___21, 
+                        Corona_Radiata_Path2 = secondary_pathside___22, 
+                        Periventricular_White_Matter__Path2 = secondary_pathside___23, 
+                        Subcortical_White_Matter_Path2 = secondary_pathside___24, 
+                        Cingulate_Gyrus_Path2 = secondary_pathside___25, 
+                        Scattered_Bilateral_Cerebral_Path2 = secondary_pathside___26, 
+                        Spine_Path2 = secondary_pathside___27, 
+                        Ventricles_Path2 = secondary_pathside___28, 
+                        Hippocampus_Path2 = secondary_pathside___29, 
+                        Other_Path2 = secondary_pathside___999)
+
+#Add suffix to indicate columns for pathology side - This indicates L, R, or Bilateral - Should be ACA2 to Hippocampus_secondary - should start at aca2 to hippocampus_secondary
+colnames(demo)[187:211] <- paste(colnames(demo)[187:211], "Path_Side", sep = "_")
+
+# Other pathside notes
+demo <- demo %>% rename(other_desc_pathside2 = other_pathside)
+
+#Change back mca_complete_incomplte
+colnames(demo)[189] <- "mca_complete_incomplete2"
+
+# Recode all pathsides
+demo$aca2_Path_Side <- recode(demo$aca2_Path_Side, '1' = "Left", '2' = "Right", '3' = "Both", '999' = "Unspecified")
+
+demo$mca2_Path_Side <- recode(demo$mca2_Path_Side, '1' = "Left", '2' = "Right", '3' = "Both", '999' = "Unspecified")
+
+# 12.1.2019; Did not run because no data here
+# 01.09.2020; Also did not run because no data
+# 01.24.2020; Also did not run because no data
+# 08.22.2020; Also did not run because no data
+# 1, Complete | 0, Incomplete | 888, Not specified | 999, Unclear
+demo$mca_complete_incomplete2 <- recode(demo$mca_complete_incomplete2, '1' = "Complete", '0' = "Incomplete", '888' = "Not Specified", '999' = "Unclear")
+
+demo$pca2_Path_Side <- recode(demo$pca2_Path_Side, '1' = "Left", '2' = "Right", '3' = "Both", '999' = "Unspecified")
+
+demo$cerebellar2_Path_Side <- recode(demo$cerebellar2_Path_Side, '1' = "Left", '2' = "Right", '3' = "Both", '999' = "Unspecified")
+
+demo$midbrain2_Path_Side <- recode(demo$midbrain2_Path_Side, '1' = "Left", '2' = "Right", '3' = "Both", '999' = "Unspecified")
+
+demo$pons2_Path_Side <- recode(demo$pons2_Path_Side, '1' = "Left", '2' = "Right", '3' = "Both", '999' = "Unspecified")
+
+demo$medulla2_Path_Side <- recode(demo$medulla2_Path_Side, '1' = "Left", '2' = "Right", '3' = "Both", '999' = "Unspecified")
+
+demo$thalamus2_Path_Side <- recode(demo$thalamus2_Path_Side, '1' = "Left", '2' = "Right", '3' = "Both", '999' = "Unspecified")
+
+demo$frontal2_Path_Side <- recode(demo$frontal2_Path_Side, '1' = "Left", '2' = "Right", '3' = "Both", '999' = "Unspecified")
+
+demo$temporal2_Path_Side <- recode(demo$temporal2_Path_Side, '1' = "Left", '2' = "Right", '3' = "Both", '999' = "Unspecified")
+
+demo$parietal2_Path_Side <- recode(demo$parietal2_Path_Side, '1' = "Left", '2' = "Right", '3' = "Both", '999' = "Unspecified")
+
+demo$occipital2_Path_Side <- recode(demo$occipital2_Path_Side, '1' = "Left", '2' = "Right", '3' = "Both", '999' = "Unspecified")
+
+demo$corpus2_callosum_Path_Side <- recode(demo$corpus_callosum2_Path_Side, '1' = "Left", '2' = "Right", '3' = "Both", '999' = "Unspecified")
+
+demo$caudate2_Path_Side <- recode(demo$caudate2_Path_Side, '1' = "Left", '2' = "Right", '3' = "Both", '999' = "Unspecified")
+
+demo$internal2_capsule_Path_Side <- recode(demo$internal_capsule2_Path_Side, '1' = "Left", '2' = "Right", '3' = "Both", '999' = "Unspecified")
+
+demo$basal_ganigla2_Path_Side <- recode(demo$basal_ganglia2_Path_Side, '1' = "Left", '2' = "Right", '3' = "Both", '999' = "Unspecified")
+
+demo$insula2_Path_Side <- recode(demo$insula2_Path_Side, '1' = "Left", '2' = "Right", '3' = "Both", '999' = "Unspecified")
+
+demo$putamen2_Path_Side <- recode(demo$putamen2_Path_Side, '1' = "Left", '2' = "Right", '3' = "Both", '999' = "Unspecified")
+
+demo$globus_pallidus2_Path_Side <- recode(demo$globus_pallidus2_Path_Side, '1' = "Left", '2' = "Right", '3' = "Both", '999' = "Unspecified")
+
+demo$corona_radiata2_Path_Side <- recode(demo$corona_radiata2_Path_Side, '1' = "Left", '2' = "Right", '3' = "Both", '999' = "Unspecified")
+
+demo$periventricular_white_matter2_Path_Side <- recode(demo$periventricular_white_matter2_Path_Side, '1' = "Left", '2' = "Right", '3' = "Both", '999' = "Unspecified")
+
+demo$subcortical_white_matter2_Path_Side <- recode(demo$subcortical_white_matter2_Path_Side, '1' = "Left", '2' = "Right", '3' = "Both", '999' = "Unspecified")
+
+# 12.1.2019; Did not run because no data here
+# 01.09.2020; Did not run because no data here
+# 01.24.2020; Did not run because no data here
+# 08.22.2020; Did not run because no data here
+demo$cingulate_gyrus2_Path_Side <- recode(demo$cingulate_gyrus2_Path_Side, '1' = "Left", '2' = "Right", '3' = "Both", '999' = "Unspecified")
+
+demo$hippocampus_secondary_Path_Side <- recode(demo$hippocampus_secondary_Path_Side, '1' = "Left", '2' = "Right", '3' = "Both", '999' = "Unspecified")
+
+# Change column name
+demo <- demo %>% rename("hippocampus2_Path_Side" = "hippocampus_secondary_Path_Side")
+```
+
+# EVD/ICP Monitors
+```{r}
+# evd: 0, No | 1, Bolt/ICP Monitor | 2, EVD
+demo <- demo %>% rename(ICP_EVD_Monitor_No = evd___0, 
+                        ICP_Monitor = evd___1, 
+                        EVD = evd___2)
+```
+
+# Surgery
+
+*Note: We have a separate surgery file we will use*
+
+```{r}
+# 0, None | 1, Craniectomy | 2, Craniotomy | 3, Lobectomy | 4, SDH Evacuation | 5, EDH Evacuation | 6, Ventriculoperitoneal Shunt | 7, Thrombectomy | 8, Cranioplasty | 999, Other Brain Surgery
+demo <- demo %>% rename(Surgery_No = surgery___0, 
+                        Craniectomy = surgery___1, 
+                        Craniotomy = surgery___2, 
+                        Lobectomy = surgery___3,
+                        SDH_Evac = surgery___4,
+                        EDH_Evac = surgery___5,
+                        V_Shunt = surgery___6,
+                        Thrombectomy = surgery___7,
+                        Cranioplasty = surgery___8,
+                        Other_Surgery = surgery___999)
+                           
+# Other surgery note
+demo <- demo %>% rename(other_desc_surgery = other_surgery)
+```                  
+
+# Mechanical ventilation and eye problems
+```{r}
+# mech_vent: 1, Yes | 0, No
+demo$mech_vent <- recode(demo$mech_vent, '1' = "Yes", '0' = "No")
+
+#eye_problems:1, Cataract | 2, Glaucoma | 3, Retinal Detachment | 0, No | 999, Other
+demo <- demo %>% rename(Eye_Cataract = eye_problems___1, 
+                        Eye_Glaucoma = eye_problems___2, 
+                        Eye_Retinal_Detachment = eye_problems___3, 
+                        Eye_No_Prob = eye_problems___0,
+                        Eye_Other = eye_problems___999)
+                             
+# cataract: 1, Left | 2, Right | 3, Both | 999, Unspecified
+demo$cataract <- recode(demo$cataract, '1' = "Left", '2' = "Right", '3' = "Both", '999' = "Unspecified")
+
+# glaucoma: 1, Left | 2, Right | 3, Both | 999, Unspecified 
+demo$glaucoma <- recode(demo$glaucoma, '1' = "Left", '2' = "Right", '3' = "Both", '999' = "Unspecified")
+
+# Other eye problems notes - eye Side
+demo <- demo %>% rename(other_eye_prob_side = other_eye_problem)
+
+# Other eye problems notes
+demo <- demo %>% rename(other_desc_eye_prob = other_eye_problems)
+                            
+# The following surgery columns I'm not touching for now since i did not touch this instrument 
+#"surgeries_type"                         
+#"other_surgery_time"                     
+#"date_surgeries"                         
+#"surgeries_complete"          
+```
+
+# TBI and aSAH Outcomes
+```{r}
+#final_diagnosis: 1, TBI | 2, aSAH
+demo$final_diagnosis <- recode(demo$final_diagnosis, '1' = "TBI", '2' = "aSAH") 
+
+# neuro_exam_arrival notes
+demo <- demo %>% rename(neuro_exam_desc = neuro_exam_arrival)
+
+# gcs eye arrival: 1, 1 No eye opening | 2, 2 Open to pain | 3, 3 Open to verbal command | 4, 4 Open spontaneously | 999, Unable to determine
+demo$gcs_eye_arrival <- recode(demo$gcs_eye_arrival, '1' = "No Eye Opening", '2' = "Open to Pain", '3' = "Open to Verbal Command", '4' = "Open Spontaneously", '999' = "Unable to Determine") 
+                     
+#gsc_verbal_arrival: 1, 1 No verbal response | 2, 2 Incomprehensible sounds | 3, 3 Inappropriate words | 4, 4 Confused | 5, 5 Oriented | 999, Unable to determine
+demo$gsc_verbal_arrival <- recode(demo$gsc_verbal_arrival, '1' = "No Verbal Response", '2' = "Incomprehensible Sounds", '3' = "Inappropriate Words", '4' = "Confused", '5' = "Oriented", '999' = "Unable to Determine")
+
+# Change column name - spelling error
+demo <- demo %>% rename(gcs_verbal_arrival = gsc_verbal_arrival)
+                   
+#gsc_motor_arrival: 1, 1 No motor response | 2, 2 Extension to pain | 3, 3 Flexion to pain | 4, 4 Withdrawal from the pain | 5, 5 Localizing pain | 6, 6 Obeys commands | 999, Unable to determine
+demo$gsc_motor_arrival <- recode(demo$gsc_motor_arrival, '1' = "No Motor Response", '2' = "Extension to Pain", '3' = "Flexion to Pain", '4' = "Withdrawal from Pain", '5' = "Localizing Pain", '6' = "Obeys Commands", '999' = "Unable to Determine")          
+
+# Change column name - spelling error
+demo <- demo %>% rename(gcs_motor_arrival = gsc_motor_arrival)
+
+#vent_arrival: 1, Yes | 0, No
+demo$vent_arrival <- recode(demo$vent_arrival, '1' = "Yes", '0' = "No") 
+                    
+# gcs eye 24: 1, 1 No eye opening | 2, 2 Open to pain | 3, 3 Open to verbal command | 4, 4 Open spontaneously | 999, Unable to determine
+demo$gcs_eye_24 <- recode(demo$gcs_eye_24, '1' = "No Eye Opening", '2' = "Open to Pain", '3' = "Open to Verbal Command", '4' = "Open Spontaneously", '999' = "Unable to Determine") 
+                     
+#gcs_verbal_24: 1, 1 No verbal response | 2, 2 Incomprehensible sounds | 3, 3 Inappropriate words | 4, 4 Confused | 5, 5 Oriented | 999, Unable to determine
+demo$gcs_verbal_24 <- recode(demo$gcs_verbal_24, '1' = "No Verbal Response", '2' = "Incomprehensible Sounds", '3' = "Inappropriate Words", '4' = "Confused", '5' = "Oriented", '999' = "Unable to Determine")
+
+#gcs_motor_24: 1, 1 No motor response | 2, 2 Extension to pain | 3, 3 Flexion to pain | 4, 4 Withdrawal from the pain | 5, 5 Localizing pain | 6, 6 Obeys commands | 999, Unable to determine
+demo$gcs_motor_24 <- recode(demo$gcs_motor_24, '1' = "No Motor Response", '2' = "Extension to Pain", '3' = "Flexion to Pain", '4' = "Withdrawal from Pain", '5' = "Localizing Pain", '6' = "Obeys Commands", '999' = "Unable to Determine")     
+                    
+#vent_24: 1, Yes | 0, No
+demo$vent_24 <- recode(demo$vent_24, '1' = "Yes", '0' = "No")                          
+                        
+# gcs_eye_discharge: 1, 1 No eye opening | 2, 2 Open to pain | 3, 3 Open to verbal command | 4, 4 Open spontaneously | 999, Unable to determine
+demo$gcs_eye_discharge <- recode(demo$gcs_eye_discharge, '1' = "No Eye Opening", '2' = "Open to Pain", '3' = "Open to Verbal Command", '4' = "Open Spontaneously", '999' = "Unable to Determine") 
+                     
+#gsc_verbal_discharge: 1, 1 No verbal response | 2, 2 Incomprehensible sounds | 3, 3 Inappropriate words | 4, 4 Confused | 5, 5 Oriented | 999, Unable to determine
+demo$gcs_verbal_discharge <- recode(demo$gcs_verbal_discharge, '1' = "No Verbal Response", '2' = "Incomprehensible Sounds", '3' = "Inappropriate Words", '4' = "Confused", '5' = "Oriented", '999' = "Unable to Determine")
+
+#gcs_motor_discharge: 1, 1 No motor response | 2, 2 Extension to pain | 3, 3 Flexion to pain | 4, 4 Withdrawal from the pain | 5, 5 Localizing pain | 6, 6 Obeys commands | 999, Unable to determine
+demo$gcs_motor_discharge <- recode(demo$gcs_motor_discharge, '1' = "No Motor Response", '2' = "Extension to Pain", '3' = "Flexion to Pain", '4' = "Withdrawal from Pain", '5' = "Localizing Pain", '6' = "Obeys Commands", '999' = "Unable to Determine")     
+                    
+#vent_discharge: 1, Yes | 0, No
+demo$vent_discharge <- recode(demo$vent_discharge, '1' = "Yes", '0' = "No")    
+
+#neurooutcomes_discharge: 0, Dead | 1, Eye opening and not following commands | 2, No following commands | 3, Following commands | 4, Unable to determine | 999, No follow up
+demo$neurooutcomes_discharge <- recode(demo$neurooutcomes_discharge, '0' = "Dead", '1' = "Eye opening - not following commands", '2' = "Not following commands", '3' = "Following Commands", '4' = "Unable to Determine", '999' = "No Follow Up")   
+
+# Three months
+
+#neurooutcomes_3: 0, Dead | 1, Eye opening but not following commands | 2, No following commands | 3, Following commands | 4, Unable to determine | 999, No follow up
+demo$neurooutcomes_3 <- recode(demo$neurooutcomes_3, '0' = "Dead", '1' = "Eye opening - not following commands", '2' = "Not following commands", '3' = "Following Commands", '4' = "Unable to Determine", '999' = "No Follow Up")     
+
+# gcs_eye_3: 1, 1 No eye opening | 2, 2 Open to pain | 3, 3 Open to verbal command | 4, 4 Open spontaneously | 999, Unable to determine
+demo$gcs_eye_3 <- recode(demo$gcs_eye_3, '1' = "No Eye Opening", '2' = "Open to Pain", '3' = "Open to Verbal Command", '4' = "Open Spontaneously", '999' = "Unable to Determine") 
+                     
+#gsc_verbal_3: 1, 1 No verbal response | 2, 2 Incomprehensible sounds | 3, 3 Inappropriate words | 4, 4 Confused | 5, 5 Oriented | 999, Unable to determine
+demo$gcs_verbal_3 <- recode(demo$gcs_verbal_3, '1' = "No Verbal Response", '2' = "Incomprehensible Sounds", '3' = "Inappropriate Words", '4' = "Confused", '5' = "Oriented", '999' = "Unable to Determine")
+
+#gcs_motor_3: 1, 1 No motor response | 2, 2 Extension to pain | 3, 3 Flexion to pain | 4, 4 Withdrawal from the pain | 5, 5 Localizing pain | 6, 6 Obeys commands | 999, Unable to determine
+demo$gcs_motor_3 <- recode(demo$gcs_motor_3, '1' = "No Motor Response", '2' = "Extension to Pain", '3' = "Flexion to Pain", '4' = "Withdrawal from Pain", '5' = "Localizing Pain", '6' = "Obeys Commands", '999' = "Unable to Determine")       
+
+#vent_3: 1, Yes | 0, No
+demo$vent_3 <- recode(demo$vent_3, '1' = "Yes", '0' = "No")     
+
+# Six Months
+#neurooutcomes_6: 0, Dead | 1, Eye opening but not following commands | 2, No following commands | 3, Following commands | 4, Unable to determine | 999, No follow up
+demo$neurooutcomes_6 <- recode(demo$neurooutcomes_6, '0' = "Dead", '1' = "Eye opening - not following commands", '2' = "Not following commands", '3' = "Following Commands", '4' = "Unable to Determine", '999' = "No Follow Up")     
+
+# gcs_eye_6: 1, 1 No eye opening | 2, 2 Open to pain | 3, 3 Open to verbal command | 4, 4 Open spontaneously | 999, Unable to determine
+demo$gcs_eye_6 <- recode(demo$gcs_eye_6, '1' = "No Eye Opening", '2' = "Open to Pain", '3' = "Open to Verbal Command", '4' = "Open Spontaneously", '999' = "Unable to Determine") 
+                     
+#gsc_verbal_6: 1, 1 No verbal response | 2, 2 Incomprehensible sounds | 3, 3 Inappropriate words | 4, 4 Confused | 5, 5 Oriented | 999, Unable to determine
+demo$gcs_verbal_6 <- recode(demo$gcs_verbal_6, '1' = "No Verbal Response", '2' = "Incomprehensible Sounds", '3' = "Inappropriate Words", '4' = "Confused", '5' = "Oriented", '999' = "Unable to Determine")
+
+#gcs_motor_6: 1, 1 No motor response | 2, 2 Extension to pain | 3, 3 Flexion to pain | 4, 4 Withdrawal from the pain | 5, 5 Localizing pain | 6, 6 Obeys commands | 999, Unable to determine
+demo$gcs_motor_6 <- recode(demo$gcs_motor_6, '1' = "No Motor Response", '2' = "Extension to Pain", '3' = "Flexion to Pain", '4' = "Withdrawal from Pain", '5' = "Localizing Pain", '6' = "Obeys Commands", '999' = "Unable to Determine")       
+
+#vent_6: 1, Yes | 0, No
+demo$mech_vent_6 <- recode(demo$mech_vent_6, '1' = "Yes", '0' = "No")     
+
+# Twelve Months
+#neurooutcomes_12: 0, Dead | 1, Eye opening but not following commands | 2, No following commands | 3, Following commands | 4, Unable to determine | 999, No follow up
+demo$neurooutcomes_12 <- recode(demo$neurooutcomes_12, '0' = "Dead", '1' = "Eye opening - not following commands", '2' = "Not following commands", '3' = "Following Commands", '4' = "Unable to Determine", '999' = "No Follow Up")     
+
+# gcs_eye_12: 1, 1 No eye opening | 2, 2 Open to pain | 3, 3 Open to verbal command | 4, 4 Open spontaneously | 999, Unable to determine
+demo$gcs_eye_12 <- recode(demo$gcs_eye_12, '1' = "No Eye Opening", '2' = "Open to Pain", '3' = "Open to Verbal Command", '4' = "Open Spontaneously", '999' = "Unable to Determine") 
+                     
+#gsc_verbal_12: 1, 1 No verbal response | 2, 2 Incomprehensible sounds | 3, 3 Inappropriate words | 4, 4 Confused | 5, 5 Oriented | 999, Unable to determine
+demo$gcs_verbal_12 <- recode(demo$gcs_verbal_12, '1' = "No Verbal Response", '2' = "Incomprehensible Sounds", '3' = "Inappropriate Words", '4' = "Confused", '5' = "Oriented", '999' = "Unable to Determine")
+
+#gcs_motor_12: 1, 1 No motor response | 2, 2 Extension to pain | 3, 3 Flexion to pain | 4, 4 Withdrawal from the pain | 5, 5 Localizing pain | 6, 6 Obeys commands | 999, Unable to determine
+demo$gcs_motor_12 <- recode(demo$gcs_motor_12, '1' = "No Motor Response", '2' = "Extension to Pain", '3' = "Flexion to Pain", '4' = "Withdrawal from Pain", '5' = "Localizing Pain", '6' = "Obeys Commands", '999' = "Unable to Determine")       
+
+#vent_12: 1, Yes | 0, No
+demo$vent_12 <- recode(demo$vent_12, '1' = "Yes", '0' = "No")     
+```
+
+# Mass effect and diabetes processing
+```{r}
+# mass_effect_severity: 1, Mild | 2, Moderate | 3, Severe
+demo$mass_effect_severity <- recode(demo$mass_effect_severity, '1' = "Mild", '2' = "Moderate", '3' = "Severe")  
+
+# mass_effect_location: 1, Supratentorial left | 2, Spratentorial right | 3, Infratentorial | 4, Supratentorial bilateral
+demo <- demo %>% rename(ME_location_Supratentorial_l = mass_effect_location___1, 
+                        ME_location_Supratentorial_r = mass_effect_location___2, 
+                        ME_location_Infratentorial = mass_effect_location___3, 
+                        ME_location_Supratentorial_bilat = mass_effect_location___4)
+
+# diabetes: 1, Yes | 0, No | 999, Indeterminate
+demo$diabetes <- recode(demo$diabetes, '1' = "Yes", '0' = "No", '999' = "Indeterminate")  
+```
+
+# Add surgery Information
+
+```{r}
+surgery <- surgery %>% 
+  mutate(DateSurgery = as.POSIXct(date_surgeries))
+
+demo <- demo %>% 
+  select(-date_surgeries) %>%
+  left_join(., surgery %>% select(Study_ID, DateSurgery), by = "Study_ID")
+```
+
+# Convert certain variables to factors
+```{r}
+# There may be numeric variables - maybe gcs that will later have to be converted -- I think it would be problematic with NAs,to not convert to factor though
+demo <- demo %>% 
+  mutate(Study_ID = as.character(as.numeric(Study_ID)))
+```
+
+# Save Demographics
+```{r}
+save(demo, file = "processed_data/Demographics.rda")
+```
+

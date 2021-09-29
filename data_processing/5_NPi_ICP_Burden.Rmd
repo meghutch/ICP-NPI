@@ -1,0 +1,67 @@
+---
+title: "5_NPi_ICP_Burden"
+author: "Meg Hutch"
+date: "4/25/2021"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+library(lubridate)
+```
+
+```{r}
+# cleaned ICP/pupils data
+load("processed_data/icp_cleaned.rda")
+load("processed_data/pupils_cleaned.rda")
+
+# NPi closest to ICP
+load("processed_data/icp_pupils_closest.rda")
+closest <- icp_pupils
+rm(icp_pupils)
+```
+
+Using all pupil and ICP measurements starting upon ICP monitoring initiation, we will calculate each patient's overall ICP and NPi burden defined as the proportion of ICP > 22 and NPi < 3 or < 1, respectively.
+
+To calculate proportions, we will first round each measurement to the nearest time hour time interval. If multiple measurements we will take the maxICP and minNPi. The rounding method seeks to reduce any skewing of results that may occur for patients who have multiple measurements within similar time intervals
+
+```{r}
+# filter only ICP measurements that came within 24 hours after the icp start date 
+icp_burdens <- icp %>% 
+  mutate(Date_ICP = round_date(Date_ICP, "60 minutes")) %>% 
+  group_by(Study_ID, Date_ICP) %>%
+  mutate(ICP = max(ICP)) %>% 
+  filter(Date_ICP >= first_icp_date,
+         ICP == max(ICP)) %>% 
+  slice(1L) %>%
+  mutate(timediff = difftime(Date_ICP, first_icp_date, unit = "hours")) %>%
+  filter(timediff <= 24) %>% 
+  group_by(Study_ID) %>% 
+  mutate(icp_burden = sum(ICP > 22)/n()) %>% 
+  ungroup() %>%
+  select(Study_ID, first_icp_date, icp_burden) %>%
+  distinct()
+
+burdens <- pupils %>% 
+  left_join(., icp_burdens, by = "Study_ID") %>%
+  mutate(Date_NPi = round_date(Date_NPi, "60 minutes")) %>% 
+  group_by(Study_ID, Date_NPi) %>%
+  mutate(minNPi = min(minNPi)) %>% 
+  filter(Date_NPi >= first_icp_date,
+         minNPi == min(minNPi)) %>% 
+  slice(1L) %>%
+  mutate(timediff = difftime(Date_NPi, first_icp_date, unit = "hours")) %>%
+  filter(timediff <= 24) %>% 
+  data.frame() %>% 
+  group_by(Study_ID) %>%
+  mutate(npi_burden3 = sum(minNPi < 3)/n(),
+         npi_burden1 = sum(minNPi < 1)/n()) %>%
+  distinct(Study_ID, npi_burden1, npi_burden3, icp_burden) %>%
+  ungroup()
+
+```
+
+```{r}
+save(burdens, file = "processed_data/burdens.rda")
+```
+

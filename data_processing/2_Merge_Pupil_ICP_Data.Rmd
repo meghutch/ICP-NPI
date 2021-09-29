@@ -1,0 +1,164 @@
+---
+title: "2_Merge_Pupil_ICP_Data"
+author: "Meg Hutch"
+date: "4/3/2021"
+output: html_document
+---
+
+# **ICP and Pupil Reactivity**
+
+Overview: The following script processes the Raw Pupil and ICP Data that has been collected from patients admitted to the ICU at BWH or MGH from 2016-2018. While usually measured over the course of a patient's ICU admission, these measurements are often recorded at unstructured time points. Because of this irregularity, we previously had difficulty cleaning the data in a standardized way that would allow us to exclude measurements occurring within the same time frame (to limit having many highly correlated observations), while also simultaneously trying to include as many measurements as possible to really understand these relationships.
+
+Therefore, we have attempted to structure the irregularly sampled data by examining the relationships between pupil metrics that fall within 1 hour prior to an ICP measurement. Separate datasets will be constructed to analyze 1) The closest ICP and NPi measurement within 1 Hour of one another and 2) observations where there is an NPi measurement both Before and After an ICP measurement. In cases when patients may have multiple observations within the same 1 hour time interval, we choose the observation with the overall minNPi. Similarly, if multiple ICP measurements within the same hour, we choose the measurement with the max ICP. 
+
+```{r Packages, results = "hide", message = FALSE, warning = FALSE}
+library(tidyverse)
+library(lubridate)
+```
+
+```{r}
+load("processed_data/icp_cleaned.rda")
+load("processed_data/pupils_cleaned.rda")
+```
+
+## Closest Measurement
+
+First, we will create a dataset that consists of the closest NPi and ICP measurement within 1 hour. We attempt to structure the irregularly sampled data by rounding all dates to the nearest hour and examining the relationships between pupil metrics that fall within 1 hour prior to an ICP measurement.
+
+```{r}
+icp_closest <- icp
+pupils_closest <- pupils
+
+pupils_closest$Date_round <- round_date(pupils_closest$Date_NPi, "60 minutes")
+icp_closest$Date_round <- round_date(icp_closest$Date_ICP, "60 minutes")
+```
+
+### Join ICP and NPI measurements that occured within 1 hour
+
+In this analysis, we want to ensure that NPI is within 60 minutes of every ICP measurement. If multiple dates still repeat (which weren't excluded in our original rounding method due to the way dates may have rounded (ex: 2:32 rounding to 3:00, while 2:28 rounded to 2, we will take the measurement with the maxICP or overall minNPi)
+
+```{r}
+#Merge Pupils and ICP together by StudyID and Date
+icp_pupils <- merge(pupils_closest, icp_closest, by = c("Study_ID", "Date_round"))
+nrow(unique(data.frame(icp_pupils$Study_ID)))
+
+#For multiple observations with the same date, create groups to look at the max, min, median, mean, and sd of ICP. We also want to ensure we have the actual date of the minNPi and the max ICP
+icp_pupils <- icp_pupils %>% 
+  group_by(Study_ID, Date_round) %>%
+  mutate(maxICP = max(ICP), 
+         min_minNPi = min(minNPi), 
+         Date_NPi = as.POSIXct(ifelse(min_minNPi == minNPi, Date_NPi, NA), origin='1970-01-01', na.rm=T, tz="America/New_York"), 
+         Date_ICP = as.POSIXct(ifelse(maxICP == ICP, Date_ICP, NA), origin='1970-01-01', na.rm=T, tz="America/New_York"), 
+         # if there are multiple measurements that are the same minNPi or max ICP, we want to select the actual NPi and ICP that Dates that were closest just to best control for the timing of interventions
+         timediff = abs(difftime(Date_NPi, Date_ICP, unit = "mins")))
+
+#Number of patients with an ICP and Pupil Pairing
+nrow(unique(data.frame(icp_pupils$Study_ID))) #103 patients in the analysis vs 102 when we group by 30 minute intervals - we will likely end up filtering though so as to remove this patient
+
+#Consolidate measurements
+icp_pupils <- icp_pupils %>% 
+  group_by(Study_ID, Date_round) %>% 
+  filter(timediff == min(timediff, na.rm = TRUE)) %>% 
+  slice(1L)
+```
+
+### Rename & Remove unneeded columns
+
+```{r}
+icp_pupils <- icp_pupils %>% 
+  select(-minNPi, -ICP) %>%
+  rename('Date' = Date_round, 
+         'minNPi' = min_minNPi,
+         'ICP' = maxICP) %>%
+  select(Study_ID, Date, Date_NPi, Date_ICP, minNPi, ICP, first_icp_date) %>% 
+  mutate(spike = if_else(ICP > 22, 1, 0)) %>%
+  ungroup() 
+```
+
+### Save list of patients
+
+Our primary hypothesis is regarding patients who have at least 1 measurement within 1 hour, before or after, their ICP measurement. Thus, for all datasets, we will only include patients who were identified in the closest dataset
+
+```{r}
+pts_include <- icp_pupils %>% distinct(Study_ID) 
+```
+
+### Save Closest Dataset
+
+```{r}
+save(icp_pupils, file = "processed_data/icp_pupils_closest.rda")
+```
+
+## NPi within 1 hour both before and after ICP 
+
+In this analysis, we want to ensure that NPI is within 60 minutes Before and AFTER every ICP measurement. If multiple dates still repeat (which weren't excluded in our original rounding method due to the way dates may have rounded (ex: 2:32 rounding to 3:00, while 2:28 rounded to 2, we will take the measurement with the maxICP or overall minNPi)
+
+```{r}
+icp_before_after <- icp
+pupils_before_after <- pupils
+
+# remove "Date" columns since we already renamed these
+pupils_before_after$Date <- NULL
+icp_before_after$Date <- NULL
+
+# Bind all pupil and icp measurements to each other by Study_ID
+icp_pupils <- full_join(pupils_before_after, icp, by = c("Study_ID"))
+
+icp_pupils <- icp_pupils %>% 
+  group_by(Study_ID) %>%
+  mutate(timediff = difftime(Date_ICP, Date_NPi, unit = "hours")) %>%
+  filter(timediff >= -1 & timediff <= 1) %>% 
+  mutate(before_after = if_else(timediff >= -1 & timediff < 0, "After", "Before")) %>%
+  # select the min time and max time for each ID/Date_ICP
+  # only keep measurements with a min < 0 and max > 0 - this will ensure we only keep Date_ICP with both before and After
+  group_by(Study_ID, Date_ICP) %>%
+  mutate(timediff_after = min(timediff),
+         timediff_before = max(timediff)) %>%
+  group_by(Study_ID, Date_ICP, before_after) %>%
+  filter(timediff_after <= 0 & timediff_before > 0) %>%
+  slice(1L) %>%
+  # if the same NPI measurement pairs to multiple ICP measurements, pair to the max ICP
+  group_by(Study_ID, Date_NPi) %>%
+  filter(ICP == max(ICP)) %>%
+  filter(timediff == max(timediff)) %>% # if there are still multiple NPi dates with the same Max ICP, we will take the measurement that came closest to the NPi
+  slice(1L) %>%
+  # if the same ICP measurement binds to multiple NPi measurements, choose overall minNPi
+  ungroup() %>%
+  group_by(Study_ID, Date_ICP, before_after) %>%
+  filter(minNPi == min(minNPi)) %>%
+  filter(timediff == max(timediff)) %>% # if there are still multiple ICP dates with the same minNPi, we will take the measurement that came closest to the ICP measurement
+  slice(1L) %>%
+  # remove non-pairs
+  ungroup() %>%
+  group_by(Study_ID, Date_ICP) %>% 
+  mutate(count = n()) %>%
+  filter(count > 1) %>% 
+  # for each ICP measurement select the minNPi before and after 
+  group_by(Study_ID, Date_ICP, before_after) %>% 
+  arrange(Study_ID, desc(Date_NPi)) %>% 
+  mutate(before_minNPi = ifelse(before_after == "Before", minNPi, NA), 
+         after_minNPi = ifelse(before_after == "After", minNPi, NA)) %>% 
+  group_by(Study_ID, Date_ICP) %>% 
+  fill(before_minNPi, .direction = "up") %>% 
+  filter(before_after == "After")
+
+# Remove unneeded columns
+icp_pupils <- icp_pupils %>% 
+  select(Study_ID, Date_NPi, before_minNPi, after_minNPi, Date_ICP, ICP, first_icp_date)  %>%
+  mutate(spike = if_else(ICP > 22, 1, 0),
+         delta_npi = after_minNPi - before_minNPi)
+```
+
+### Keep only included patients
+
+```{r}
+icp_pupils <- merge(icp_pupils, pts_include, by = "Study_ID")
+```
+
+### Save before and after dataset
+
+```{r}
+save(icp_pupils, file = "processed_data/icp_pupils_before_after.rda")
+```
+
+
