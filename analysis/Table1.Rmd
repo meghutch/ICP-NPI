@@ -1,0 +1,162 @@
+---
+title: "Analysis_2.0_Table1"
+author: "Meg Hutch"
+date: "8/22/2020"
+output: html_document
+---
+
+```{r}
+library(dplyr)
+library(kableExtra)
+library(gridExtra)
+library(reshape2)
+library(knitr)
+library(tableone)
+library(ggplot2)
+library(grid)
+library(cowplot)
+library(tibble)
+```
+
+We will only keep measurements from patients with IPH, aSAH, and TBI. 
+
+```{r Import Data, echo = FALSE}
+#Processed Demographics Data (As of 08.22.2020)
+load("processed_data/Demographics.rda")
+
+load("processed_data/icp_pupils_closest.rda") 
+source("R/time_sensitivity_funcs.r")
+```
+
+
+```{r Create Table of Final Diagnoses, echo = FALSE, warning = FALSE, message = FALSE}
+
+# we will only keep patients who have paired measurements within the first 96 hours
+icp_pupils <- monitoring_timediff(icp_pupils)
+
+demo <- demo %>% 
+  merge(., icp_pupils %>% distinct(Study_ID))
+
+# Select columns with Study_ID and with the suffix '_final'
+final_dx <- demo %>% select(matches("(Study_ID|_final)"))
+
+# Keep only IPH, aSAH, and TBI patients
+final_dx <- final_dx %>% 
+  select(Study_ID, ASah_final, parenchymal_tbi_final, Spon.IPH_final)
+
+# melt df from wide to long format
+final_dx <- melt(final_dx, id.vars=c("Study_ID"))
+# remove when value = 0
+final_dx <- final_dx %>% filter(!value == 0)
+# remove value column
+final_dx$value <- NULL
+# rename varibale column
+colnames(final_dx)[2] <- "Diagnosis"
+
+# Recode diagnosis categories to make more readable for the table
+final_dx$Diagnosis <- recode(final_dx$Diagnosis,
+                             'Spon.IPH_final' = 'IPH',
+                             'ASah_final' = 'aSAH',
+                             'parenchymal_tbi_final' = 'TBI')
+
+
+# Create table
+dx_table <- as.data.frame(table(final_dx$Diagnosis))
+# Change column names
+colnames(dx_table) <- c("Diagnosis", "n")
+# Arrange by sample size
+dx_table <- dx_table %>% arrange(desc(n))
+# Add frequncies (%s)
+dx_table$'%' <- round((dx_table$n/nrow(unique(data.frame(final_dx$Study_ID))))*100, 1)
+
+# remove diagnoses that are 0
+dx_table <- dx_table %>% filter(!n == 0)
+sum(dx_table$n)
+sum(dx_table$`%`)
+
+#save final_dx 
+save(final_dx, file = "processed_data/final_dx.rda")
+```
+
+
+```{r Primary Diagnosis Table, echo = FALSE, eval = FALSE}
+dx_table %>%
+  kable("html")%>%
+  kable_styling(bootstrap_options = "striped")
+print(dx_table)
+```
+
+# **Demographic and Primary Diagnosis**
+
+```{r Ethnicity/Race, echo = FALSE, warning = FALSE, message = FALSE}
+#Melt Race column, then bind with Ethnicity, gender, age, and final diagnosis
+race <- demo %>%
+  select(Study_ID, White, Black, Asian, Nat.Hawaiian_Pac.Isl, Amer.Ind_Alaska.Nat, Other_Unknown_Race)
+
+# melt df from wide to long format
+race <- melt(race, id.vars=c("Study_ID"))
+# remove when value = 0
+race <- race %>% filter(!value == 0)
+# remove value column
+race$value <- NULL
+# rename varibale column
+colnames(race)[2] <- "Race"
+
+# Recode race categories to make more readable for the table
+race$Race <- recode(race$Race,
+                             'White' = 'White',
+                             'Black' = 'Black',
+                             'Asian' = 'Asian',
+                             'Nat.Hawaiian_Pac.Isl' = 'Native Hawaiian/Other Pacific
+                    Islander',
+                             'Amer.Ind_Alaska.Nat' = 'American Indian/Alaska Native',
+                             'Other_Unknown_Race' = "Other/Unknown")
+
+# Merge with ethnicity, age, and gender, mortality
+eth <- demo %>% 
+  select(Study_ID, gender, age, ethnicity, deceased)
+
+# Capitalize for Consistency
+colnames(eth) <- c("Study_ID", "Gender", "Age", "Ethnicity", "In Hospital Mortality")
+
+#Recode to make cleaner
+eth$Ethnicity <- recode(eth$Ethnicity,
+                             'Hispanic' = 'Hispanic',
+                             'Not_Hispanic' = 'Not Hispanic',
+                             'Unknown' = 'Unknown')
+
+# merge all
+dem_merge <- merge(race, eth, by = "Study_ID")
+dem_merge <- merge(dem_merge, final_dx, by = "Study_ID")
+
+# reorder levels based of the dx_table - these are already in order by frequency so we can create a list
+level_order <- dx_table$Diagnosis
+
+# we will refactor dem_merge with the list of these levels
+dem_merge$Diagnosis <- factor(dem_merge$Diagnosis, levels = level_order)
+```
+
+```{r Demographics Table, echo = FALSE}
+# Table one of preliminary demographics and diagnostic data
+dem_merge$Study_ID <- NULL
+
+demtable <- CreateTableOne(data = dem_merge) 
+
+table1 <- print(demtable,  exact = "stage", quote = FALSE, noSpaces = TRUE, printToggle = FALSE)
+
+table1 <- as.data.frame(table1)
+
+# remove rows with 0
+table1 <- table1 %>% 
+  rownames_to_column('cats') %>% 
+  filter(!Overall == "0 (0.0)") %>% 
+  column_to_rownames('cats')
+
+table1 %>% 
+  kable("html") %>%
+  kable_styling(bootstrap_options = "striped") %>% 
+  row_spec(c(1:2, 7:9, 13:14), bold=T)
+
+write.csv(table1, file = "results/Demographics_Table1.csv")
+save(table1, file = "processed_data/Demographics_Table1.rda")
+```

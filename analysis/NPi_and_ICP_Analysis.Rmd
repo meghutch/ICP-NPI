@@ -1,0 +1,814 @@
+---
+title: "**NPi_and_ICP_Analysis**"
+author: "**Author: Meg Hutch**"
+date: "**Last compiled on** `r format(Sys.time(), '%d %B, %Y: %H:%M')`"
+---
+
+
+This script analyzes the association between NPi and Spikes in ICP (ICP > 22 mmHg) at different time points starting from the initiation of ICP monitoring (up to 96 hours) in patients with TBI, IPH, and aSAH.
+
+```{r setup, warning=FALSE, message=FALSE}
+library(tidyverse)
+library(ggplot2)
+library(kableExtra)
+library(lme4)
+library(lmerTest)
+library(formattable)
+library(knitr)
+library(forcats)
+library(viridis)
+library(RColorBrewer)
+library(cowplot)
+library(broom)
+library(broom.mixed)
+library(DT)
+```
+
+**Set working directory & Load Data**
+
+```{r}
+# NPi closest to ICP
+load("processed_data/icp_pupils_closest.rda")
+closest <- icp_pupils
+
+# NPi Before AND After ICP
+load("processed_Data/icp_pupils_before_after.rda")
+before_after <- icp_pupils
+
+rm(icp_pupils)
+
+# diagnoses & demographics
+load("processed_data/final_dx.rda")
+load("processed_data/Demographics.rda")
+load("processed_data/Demographics_Table1.rda")
+
+# evd
+load("processed_data/evd.rda")
+
+# burdens in the first 24 hours of icp monitoring
+load("processed_data/burdens.rda")
+
+source("R/time_sensitivity_funcs.r")
+```
+
+# **Data & Time Interval Setup**
+
+### **Select TBI, IPH, and aSAH patients**
+
+```{r}
+closest <- merge(closest, final_dx, by = "Study_ID")
+before_after <- merge(before_after, final_dx, by = "Study_ID")
+```
+
+### **Add Covariates**
+
+**EVD Drainage**
+
+Identify whether EVD drainage occurred within 1 hour before NPi or ICP measurement. ```EVD_Either``` will indicate that the drainage occurred either before NPi OR ICP. A contingency plot below will show that when EVD drainage occurred, it was most prevelenly before both the ICP & NPi.
+
+```{r}
+closest <- evd_drainage(closest)
+```
+
+**Hemi-craniectomy before NPi/ICP measurement**
+
+The ```hemi_crani()``` function will identify whether or not hemi-craniectomy occurred anytime before the measurement. It is unlikley that in a one hour time-interval, one measurement could have occurred before the ICP but not NPI, or vice versa. This is true in the 69 patient analysis, but wouldn't hurt to do a sanity check if more data is added.
+
+```{r}
+closest <- hemi_crani(closest)
+```
+
+**Add demographics**
+
+```{r}
+Demographics <- demo %>%
+  select(Study_ID, deceased)
+
+closest <- merge(closest, Demographics, by = "Study_ID")
+```
+
+**NPi/ICP Burden**
+
+Add NPi and ICP burden - this was calculated using all pupil and ICP measurements within the first 24 hours upon starting ICP monitoring. 
+
+* ```npi_burden1``` = proportion of NPi measurements < 1
+* ```npi_burden3``` = proportion of NPi measurements < 3
+* ```icp_burden``` = proportion of ICP measurements < 22
+
+```{r}
+closest <- closest %>% 
+  left_join(., burdens, by = "Study_ID")
+```
+
+
+### **Bin NPi**
+
+The following function bins NPi into 3 categories based on reactivity: ```npi_bins3``` or 2 categories ```npi_bins2```
+
+```{r}
+closest <- bin_npi(closest)
+```
+
+### **Calculate time difference from the start of ICP monitoring**
+
+For each paired measurement, we calculate the time difference from the start of NPi monitoring. 
+
+Additionally, for NPi measurements that occurred $\leq$ 1 hour before start of ICP monitoring, we will round the time difference to 0 in order to keep these in the analysis with the function below.
+
+Lastly, we will only analyze the first 96 hours worth of measurements
+
+```{r}
+closest <- monitoring_timediff(closest)
+```
+
+# **Patient Cohort**
+
+Our patient cohort of interest contains patients who have IPH, aSAH, or TBI and who had an NPi measurement within 1 hour before or after an ICP measurement, and whose pupil measurements started within the first 96 hours of ICP monitoring.
+
+```{r}
+datatable(table1)
+```
+
+
+## **Sample Size Table**
+
+The ```sample_size``` function calculates the number of paired NPi & ICP observations, numbers of patients, and numbers of spikes within different NPi Buckets and time intervals from the start of ICP monitoring.
+
+The below for-loop will generate a sample size table by running our sample_size function on paired measurements that fall within the following time intervals: 0-24 hours, 24-48 hours, 48-72 etc, all the way to 96 hours. We also run our function on all paired measurements
+
+```{r}
+# run for-loop
+sample_size_list = list()
+  
+  for (i in seq(from = 24, to = 96, by = 24)) {
+    result <- sample_size(closest, i)
+    sample_size_list[[i]] <- result # add it to your list
+  }
+  
+  sample_size_list = do.call(rbind, sample_size_list)
+  
+  # Also run function on all data
+  all_sample <- sample_size(closest, 0)
+  
+  # bind to the previous results
+  sample_size_list <- rbind(all_sample, sample_size_list)
+  
+  row.names(sample_size_list) <- c("All Measurements", "First 24 Hours", "First 24-48 Hours",
+                                   "First 48-72 Hours", "First 72-96 Hours")
+  
+  sample_size_table <- tibble::rownames_to_column(sample_size_list, "Analysis")
+
+sample_size_table %>%
+  kable("html") %>%
+  add_header_above(c("Total Observations" = 4, 
+                     "NPi < 1" = 3,
+                     "NPi 1-3" = 3, 
+                     "NPi > 3"  = 3)) %>%
+  kable_styling(bootstrap_options = "striped")
+```
+
+# **Primary Hypothesis**
+
+**Our primary hypothesis is that poor NPi is a biomarker of elevated ICP.**
+
+## **Linear Association of NPi and ICP**
+
+*Note: Perhaps we should include in supplementary - but may be good to show as not finding a linear association could still be an important finding*
+
+```{r}
+closest <- closest %>% 
+  mutate(NPi_bins3 = fct_relevel(NPi_bins3,
+                                "< 1", 
+                                "1-3",
+                                "3-5"))
+
+ggplot(closest %>% filter(timediff <= 96), 
+       aes(x = ICP, y = minNPi, color = Study_ID)) + 
+  geom_point() +
+  theme_bw() +
+  theme(legend.position = "none")
+```
+
+## **Association of NPi binned by reactivity and ICP**
+
+```{r}
+ggplot(closest, aes(x = NPi_bins3, y = ICP, fill = NPi_bins3)) + 
+  geom_boxplot() +
+  scale_fill_viridis(discrete = TRUE, alpha=0.8) +
+  geom_jitter(color = "black", size=0.4, alpha=0.2) +
+  theme_bw() +
+  theme(legend.position = "none")
+```
+
+### **Random Mixed-effects Models**
+
+When conducting a random mixed-effects logistic regression model controlling for patient as a random effect, we observe that poor NPi (NPi < 1), is significantly associated with an increased odds of having a ICP spike.
+
+```{r}
+closest$NPi_bins3 <- relevel(closest$NPi_bins3,"3-5")
+
+m1 <- tidy(glmer(spike ~ NPi_bins3 + (1|Study_ID), 
+              family = "binomial", 
+              data = closest), 
+              effects = "fixed")
+
+tidy_results(m1)
+```
+
+## **Adjusting for Covariates**
+
+### **EVD-Drainage**
+
+EVD drainage is confounding variable -> can influence the exposure (NPi) and the outcome (ICP), however, having two variables that indicate EVD drainage before NPi and ICP would likely be correlated.
+
+When looking at the contingency tables, we can see that for patients with EVD drainage, there were only 35 instances where the drainage did not occur within 1 hour before both the NPi and ICP measurement. Thus, we can create a variable ```EVD_Either``` to indicate whether there was EVD drainage either before NPi, ICP, or both measurements.
+
+```{r}
+table(closest$EVD_NPi, closest$EVD_ICP)
+
+ggplot(closest %>%
+         mutate(NPi_bins3 = fct_relevel(NPi_bins3,
+                                "< 1", 
+                                "1-3",
+                                "3-5")),
+       aes(x = NPi_bins3, y = ICP, fill = as.factor(EVD_Either))) +
+  geom_boxplot() +
+  scale_fill_viridis(discrete = TRUE, alpha=0.8) +
+  geom_jitter(color = "black", size=0.4, alpha=0.2) +
+  theme_bw() 
+```
+
+### **Random Mixed-effects Models**
+
+```{r}
+closest$NPi_bins3 <- relevel(closest$NPi_bins3,"3-5")
+
+m1.2 <- tidy(glmer(spike ~ NPi_bins3 + EVD_Either + (1|Study_ID), 
+              family = "binomial", 
+              data = closest), 
+              effects = "fixed")
+
+tidy_results(m1.2)
+```
+
+We will also assess interaction terms. For example, ```NPi_bins3< 1:EVD_Either``` examines whether poor pupil reactivity has an interaction with EVD drainage occurring within 1 hour before. No significance was found, suggesting that we can remove the iteraction term from our model.
+
+```{r}
+m1.3 <- tidy(glmer(spike ~ NPi_bins3 * EVD_Either + (1|Study_ID), 
+              family = "binomial", 
+              data = closest), 
+              effects = "fixed")
+
+tidy_results(m1.3)
+```
+
+### **Hemi-craniectomy**
+
+Unique patients with hemi-crani
+
+```{r}
+crani_pts <- closest %>% 
+       filter(hemi_crani_before == 1) %>%
+       distinct(Study_ID)
+nrow(crani_pts)
+```
+
+Number of observations post hemi-craniectomy
+
+```{r}
+table(closest$hemi_crani_before)
+```
+
+Only 4 patients with hemi-crani and ICP > 22 after hemi-craniectomy
+
+```{r}
+closest %>%
+       filter(Study_ID %in% crani_pts$Study_ID,
+              ICP > 22,
+              hemi_crani_before == 1) %>% 
+       distinct(Study_ID, Diagnosis)
+```
+
+**Distributions of NPi and ICP in observations of patients who had hemi-craniectomy at some point within the first 96 hours**
+
+In patients with hemi-craniectomy, we have very little data for observations prior to surgery. The following plots show the distribution of NPi and ICP for only the 11 patients with hemi-craniectomy at some point
+
+*Note: Patient 118 has all NPi =  and always elevated ICP, 102 has 2 measurements with NPi <= 3, but the other two patients have normal NPi*
+
+```{r}
+ggplot(closest %>% 
+         filter(Study_ID %in% crani_pts$Study_ID),
+       aes(x = minNPi, fill = as.factor(hemi_crani_before))) + 
+         geom_histogram() + 
+  scale_fill_viridis(discrete = TRUE, alpha=0.8) +
+  theme_bw() + 
+  facet_wrap(~as.factor(hemi_crani_before))
+
+ggplot(closest %>% 
+         filter(Study_ID %in% crani_pts$Study_ID),
+       aes(x = ICP, fill = as.factor(hemi_crani_before))) + 
+         geom_histogram() + 
+  scale_fill_viridis(discrete = TRUE, alpha=0.8) +
+  theme_bw() + 
+  facet_wrap(~as.factor(hemi_crani_before))
+  
+```
+
+```{r}
+ggplot(closest %>%
+         mutate(NPi_bins3 = fct_relevel(NPi_bins3,
+                                "< 1", 
+                                "1-3",
+                                "3-5")),
+       aes(x = NPi_bins3, y = ICP, fill = as.factor(hemi_crani_before))) +
+  geom_boxplot() +
+  geom_point(alpha = 0.1, position=position_jitterdodge()) + 
+  scale_fill_viridis(discrete = TRUE, alpha=0.8) +
+  theme_bw() 
+```
+
+### **Random Mixed-effects Models**
+
+Hemi-craniectomy does not seem to be a predictor of spikes in ICP
+
+```{r}
+closest$NPi_bins3 <- relevel(closest$NPi_bins3,"3-5")
+
+m1.4 <- tidy(glmer(spike ~ NPi_bins3 + as.factor(hemi_crani_before) + (1|Study_ID), 
+              family = "binomial", 
+              data = closest), 
+              effects = "fixed")
+
+tidy_results(m1.4)
+```
+
+**Stratify observations into hemi vs non-hemicraniectomy observations**
+
+Without hemi-craniectomy observations, NPi < 1 is still significantly associated with spikes in ICP. 
+
+```{r}
+m1.5 <- tidy(glmer(spike ~ NPi_bins3 + EVD_Either + (1|Study_ID), 
+              family = "binomial", 
+              data = closest %>% filter(hemi_crani_before == 0)), 
+              effects = "fixed")
+
+tidy_results(m1.5)
+```
+
+To evaluate NPi in patients with hemi-craniectomy, we need to use 2 bins as we don't have enough observations for the 3 bin approach. We see that NPi < 3 is not significantly associated with spikes in ICP in patients observations post-hemicraniectomy
+
+```{r}
+m1.6 <- tidy(glmer(spike ~ NPi_bins2 + (1|Study_ID), 
+              family = "binomial", 
+              data = closest %>% filter(hemi_crani_before == 1)), 
+              effects = "fixed")
+
+tidy_results(m1.6)
+```
+
+# **Secondary Hypotheses**
+
+**Does the strength of the association of NPi and ICP change overtime?**
+
+## **NPi and ICP Association Overtime**
+
+### **Patient & Observation counts with ICP > 22 and NPi < 3**
+
+Overall, there are few patients and observations, especially overtime, that have our outcome of interest.
+
+* Is this implicit survival bias in this type of analysis? Patients who are really sick would die earlier, while healthier patients, who we continue to follow, would survive. Also, patients should ideally be getting better (having less spikes, better pupil reactivity), because they are being treated
+* Can we increase sample size with extra MGH/BMC data?
+
+```{r}
+closest <- obs_overtime(closest)
+closest <- closest %>% 
+  mutate(NPi_bins3 = fct_relevel(NPi_bins3,
+                                "< 1", 
+                                "1-3",
+                                "3-5"))
+
+datatable(closest %>%
+       group_by(Study_ID, hour24) %>% 
+       filter(minNPi < 3) %>%
+       mutate(sum_spike = sum(spike)) %>%
+       distinct(Study_ID, hour24, sum_spike) %>%
+  tidyr::pivot_wider(names_from = hour24, 
+              values_from = sum_spike,
+              values_fill = 0) %>%
+    select(Study_ID, `24`, `48`, `72`, `96`) %>%
+    arrange(desc(`24`)))
+```
+
+### **Unique Patients with ICP > 22**
+
+```{r}
+ggplot(closest %>% 
+         group_by(hour24, NPi_bins3) %>% 
+         filter(spike == 1) %>%
+         distinct(Study_ID, NPi_bins3, hour24) %>% 
+         mutate(count_n = n_distinct(Study_ID)) %>% 
+       distinct(NPi_bins3, hour24, count_n),
+       aes(x = as.factor(hour24), y = count_n, fill = NPi_bins3)) + 
+  geom_bar(stat = "identity", position = "dodge") + 
+  scale_fill_viridis(discrete = TRUE, alpha=0.8) +
+  xlab("Time") + 
+  ylab("Unique Patients") + 
+  theme_bw() 
+```
+
+### **Random Mixed-effects Models**
+
+We will use ```timediff``` to adjust for the time in hours that the NPi/ICP measurement were taking since the start of ICP monitoring. 
+
+```{r}
+closest$NPi_bins3 <- relevel(closest$NPi_bins3,"3-5")
+
+
+m2 <- tidy(glmer(spike ~ NPi_bins3 + timediff + (1|Study_ID), 
+              family = "binomial", 
+              data = closest), 
+              effects = "fixed")
+
+tidy_results(m2)
+```
+
+There does not appear to be an interaction between ```NPi_bins3< 1:timediff```, thus we can drop these from the model.
+
+```{r}
+
+m3 <- tidy(glmer(spike ~ NPi_bins3 * timediff + (1|Study_ID), 
+              family = "binomial", 
+              data = closest), 
+              effects = "fixed")
+
+tidy_results(m3)
+```
+
+### **Adjusting for Covariates**
+
+```{r}
+m2.2 <- tidy(glmer(spike ~ NPi_bins3 + timediff + EVD_Either + (1|Study_ID), 
+              family = "binomial", 
+              data = closest), 
+              effects = "fixed")
+
+tidy_results(m2.2)
+
+
+m3.2 <- tidy(glmer(spike ~ NPi_bins3 * timediff + EVD_Either + (1|Study_ID), 
+              family = "binomial", 
+              data = closest), 
+              effects = "fixed")
+
+tidy_results(m3.2)
+```
+
+### **Sensitivity of NPi as a Biomarker of ICP**
+
+Here we examine metrics to determine how sensitive/specific NPi < 3 is for predicting patients with ICP > 22. 
+
+Though, sensitivity is overall low, it is highest within the first 24 hours (Not sure this is really helpful with our small sample size - of note, here sensitivity was higher with NPi < 3 compared to NPi < 1)
+
+```{r}
+sens24 <- sensitivity_time_function(closest, time = 24)
+sens48 <- sensitivity_time_function(closest, time = 48)
+sens72 <- sensitivity_time_function(closest, time = 72)
+sens96 <- sensitivity_time_function(closest, time = 96)
+
+sens_all <- rbind(sens24, sens48, sens72, sens96)
+
+ggplot(sens_all %>% 
+         pivot_longer(cols = sensitivity:npv,
+                      names_to = "metric", 
+                      values_to = "value"),
+       aes(x = as.factor(hour24), y = value, color = metric)) + 
+  scale_color_brewer(palette = "Dark2") + 
+  geom_point(aes(colour = metric, group = metric)) + 
+  geom_line(aes(colour = metric, group = metric)) + 
+  theme_bw()
+```
+
+## **Alternative Outcomes**
+
+### **Timing of pupil measurements**
+
+Interestingly, the majority of the paired pupil measurements occurred after the spike in ICP - *any bias here with nurses being more likely to measure after?*
+
+```{r}
+closest <- closest %>%
+  mutate(npi_after_icp = if_else(Date_NPi >= Date_ICP, 1, 0))
+
+ggplot(closest %>%
+  mutate(NPi_bins3 = fct_relevel(NPi_bins3,
+                                "< 1", 
+                                "1-3",
+                                "3-5")), 
+       aes(x = NPi_bins3, fill = as.factor(npi_after_icp))) + 
+  geom_bar(position = "dodge") + 
+  scale_fill_viridis(discrete = TRUE, alpha=0.8) +
+  theme_bw()
+```
+
+
+### **Association of NPi and ICP with Death**
+
+*Note: More complex Regression models with interaction terms won't converge*
+
+```{r}
+m4 <- tidy(glmer(deceased ~ NPi_bins3 + spike + (1|Study_ID), 
+              family = "binomial", 
+              data = closest), 
+              effects = "fixed")
+
+tidy_results(m4)
+
+m4.1 <- tidy(glmer(deceased ~ NPi_bins3 + spike + log(timediff+1) + (1|Study_ID), 
+              family = "binomial", 
+              data = closest), 
+              effects = "fixed")
+
+tidy_results(m4.1)
+```
+
+**NPi and ICP Burden to predict death**
+
+Sample size is very low for patients with increased NPi burden (10% of measurements NPi < 3) and those who were deceased
+
+```{r}
+deceased_poor_npi <- closest %>% 
+  distinct(Study_ID, deceased, npi_burden3) %>%
+  mutate(burden10 = if_else(npi_burden3 > 0.10, 1, 0))
+
+table(deceased_poor_npi$deceased, deceased_poor_npi$burden10)
+
+ggplot(closest %>% distinct(Study_ID, deceased, npi_burden1),
+       aes(x = npi_burden1, fill = as.factor(deceased))) + 
+  geom_histogram() + 
+  theme_bw()
+
+ggplot(closest %>% distinct(Study_ID, deceased, npi_burden3), 
+       aes(x = as.factor(deceased), y = npi_burden3, fill = as.factor(deceased))) + 
+  scale_fill_viridis(discrete = TRUE, alpha=0.8) +
+  geom_jitter(color = "black", size=0.4, alpha=0.2) +
+  geom_boxplot() + 
+  theme_bw()
+```
+
+```{r}
+m4.2 <- glm(deceased ~ npi_burden1 * icp_burden,
+            family = "binomial", 
+            closest)
+
+summary(m4.2)
+```
+
+### **NPi and ICP Burden**
+
+There is not correlation between NPi and ICP Burden. The Linear regression results are significant but we can see the data is very non-linear + many outliers
+
+```{r}
+ggplot(closest, 
+       aes(x = npi_burden3, y = icp_burden, color = Study_ID)) + 
+  geom_point() + 
+  theme_bw() + 
+  theme(legend.position = "none") 
+
+ggplot(closest %>% distinct(Study_ID, deceased, npi_burden3, Diagnosis), 
+       aes(x = Diagnosis, y = npi_burden3, fill = as.factor(Diagnosis), color = Study_ID)) + 
+  scale_fill_viridis(discrete = TRUE, alpha=0.8) +
+  geom_point() + 
+  theme_bw() + 
+  theme(legend.position = "none")
+
+ggplot(closest %>% distinct(Study_ID, deceased, icp_burden, Diagnosis), 
+       aes(x = Diagnosis, y = icp_burden, fill = as.factor(Diagnosis), color = Study_ID)) + 
+  scale_fill_viridis(discrete = TRUE, alpha=0.8) +
+  geom_point() + 
+  theme_bw() + 
+  theme(legend.position = "none")
+
+burdens <- closest %>% 
+  distinct(Study_ID, icp_burden, npi_burden1, npi_burden3, Diagnosis)
+
+cor.test(burdens$icp_burden, burdens$npi_burden1, method = "spearman")
+cor.test(burdens$icp_burden, burdens$npi_burden3, method = "spearman")
+
+summary(lm(icp_burden ~ npi_burden3, data = burdens))
+```
+
+
+## **Diagnosis**
+
+### **Unique number of patients by diagnosis**
+
+```{r}
+closest <- closest %>% 
+  mutate(NPi_bins3 = fct_relevel(NPi_bins3,
+                                "< 1", 
+                                "1-3",
+                                "3-5"))
+
+ggplot(closest %>% 
+         group_by(hour24, NPi_bins3, Diagnosis) %>% 
+         filter(spike == 1) %>%
+         distinct(Study_ID, NPi_bins3, hour24, Diagnosis) %>% 
+         mutate(count_n = n_distinct(Study_ID)) %>% 
+       distinct(NPi_bins3, hour24, count_n),
+       aes(x = as.factor(hour24), y = count_n, group = NPi_bins3, fill = NPi_bins3)) + 
+  geom_bar(stat = "identity", position = "dodge") + 
+  scale_fill_viridis(discrete = TRUE, alpha=0.8) +
+  xlab("Time") + 
+  ylab("Unique Patients") + 
+  theme_bw() +
+  facet_wrap(~Diagnosis, nrow = 1)
+```
+
+### **NPi and ICP overtime by diagnosis**
+
+```{r}
+ggplot(closest,
+       aes(x = as.factor(hour24), y = ICP, 
+           fill = NPi_bins3)) + 
+  facet_grid(rows = vars(Diagnosis),
+             scales = 'free', space = 'free') +
+  scale_fill_viridis(discrete = TRUE, alpha=0.8) +
+  geom_jitter(color = "black", size=0.4, alpha=0.5) +
+  geom_hline(yintercept= 20, size = 1, linetype="dashed", color = "slateblue") + 
+  scale_y_continuous(breaks=seq(-20, 80, 10)) + 
+  xlab("Hours Since Initiation of ICP Monitoring") + 
+  geom_boxplot() + 
+  theme_bw() + 
+  labs(fill = "NPi Bin")
+```
+
+### **TBI**
+
+```{r}
+tbi <- closest %>% 
+  filter(Diagnosis == "TBI") %>% 
+  mutate(NPi_bins3 = fct_relevel(NPi_bins3,
+                                "< 1", 
+                                "1-3",
+                                "3-5"))
+
+table(tbi$NPi_bins3, tbi$spike)
+
+tbi$NPi_bins3 <- relevel(tbi$NPi_bins3,"3-5")
+
+m4 <- tidy(glmer(spike ~ NPi_bins3 + (1|Study_ID), 
+              family = "binomial", 
+              data = tbi), 
+              effects = "fixed")
+
+tidy_results(m4)
+
+m5 <- tidy(glmer(spike ~ NPi_bins3 + timediff + (1|Study_ID), 
+              family = "binomial", 
+              data = tbi), 
+              effects = "fixed")
+
+tidy_results(m5)
+
+m6 <- tidy(glmer(spike ~ NPi_bins3 * timediff + (1|Study_ID), 
+              family = "binomial", 
+              data = tbi), 
+              effects = "fixed")
+
+tidy_results(m6)
+```
+
+
+### **aSAH**
+
+```{r}
+asah <- closest %>% filter(Diagnosis == "aSAH")
+table(asah$NPi_bins3, asah$spike)
+
+asah$NPi_bins3 <- relevel(asah$NPi_bins3,"3-5")
+
+m7 <- tidy(glmer(spike ~ NPi_bins3 + (1|Study_ID), 
+              family = "binomial", 
+              data = asah), 
+              effects = "fixed")
+
+tidy_results(m7)
+
+m8 <- tidy(glmer(spike ~ NPi_bins3 + timediff + (1|Study_ID), 
+              family = "binomial", 
+              data = asah), 
+              effects = "fixed")
+
+tidy_results(m8)
+
+m9 <- tidy(glmer(spike ~ NPi_bins3 * timediff + (1|Study_ID), 
+              family = "binomial", 
+              data = asah), 
+              effects = "fixed")
+
+tidy_results(m9)
+```
+
+
+### **IPH**
+
+**only 7 spikes total in this patient cohort**
+
+```{r}
+iph <- closest %>% filter(Diagnosis == "IPH")
+table(iph$NPi_bins3, iph$spike)
+
+m10 <- tidy(glmer(spike ~ NPi_bins3 + (1|Study_ID), 
+              family = "binomial", 
+              data = iph), 
+              effects = "fixed")
+
+tidy_results(m10)
+
+m11 <- tidy(glmer(spike ~ NPi_bins3 + timediff + (1|Study_ID), 
+              family = "binomial", 
+              data = iph), 
+              effects = "fixed")
+
+tidy_results(m11)
+
+m12 <- tidy(glmer(spike ~ NPi_bins3 * timediff + (1|Study_ID), 
+              family = "binomial", 
+              data = iph), 
+              effects = "fixed")
+
+tidy_results(m12)
+```
+
+## **Explore NPi before and after ICP **
+
+*Note: There may be more optimal ways to set up the before and after measurements. I was trying to ensure that a before minNPi was never also an after minNPi but I feel like the logic causes us to miss some observation - at the same time we probably want to avoid before and after pairs of measurements that are occurring too closely to one another in case of potential overlap. Logic is in the 2_Merge_Pupil_ICP_Data.Rmd*
+
+```{r}
+table(before_after$spike)
+aggregate(before_minNPi ~ spike, FUN = "median", 
+          data = before_after)
+aggregate(after_minNPi ~ spike, FUN = "median", 
+          data = before_after)
+
+ggplot(before_after %>%
+         pivot_longer(cols = before_minNPi:after_minNPi,
+                      names_to = "Pupil_Time", 
+                      values_to = "minNPi") %>% 
+         mutate(Pupil_Time = factor(Pupil_Time,levels = c("before_minNPi", "after_minNPi"))),
+       aes(x = Pupil_Time, y = minNPi, fill = as.factor(spike))) + 
+  geom_boxplot() + 
+  geom_jitter(color = "black", size=0.4, alpha=0.2) +
+  theme_bw()
+
+# calculate change
+ggplot(before_after,
+       aes(x = as.factor(spike), y = delta_npi, fill = as.factor(spike))) + 
+  geom_boxplot() + 
+  theme_bw()
+
+ggplot(before_after,
+       aes(x = delta_npi, fill = as.factor(spike))) + 
+  geom_histogram() + 
+  theme_bw()
+
+ggplot(before_after %>% filter(!before_minNPi == 0), 
+       aes(y = delta_npi, x = ICP)) + 
+  geom_point() + 
+  theme_bw()
+
+test_without_npi0 <- before_after %>%
+  filter(!before_minNPi == 0) %>% 
+  filter(ICP > 22)
+
+cor.test(before_after$ICP, before_after$delta_npi)
+wilcox.test(before_after$before_minNPi, before_after$after_minNPi)
+
+# delta < 0
+delta_neg <- before_after %>% 
+  filter(delta_npi < 0) 
+
+table(delta_neg$spike)
+hist(delta_neg$ICP)
+
+# NPi < 3
+npi3 <- before_after %>% 
+  filter(before_minNPi < 3) 
+
+table(npi3$spike)
+ggplot(npi3,
+       aes(x = delta_npi, fill = as.factor(spike))) + 
+  geom_histogram() + 
+  theme_bw()
+
+aggregate(before_minNPi ~ spike, FUN = "median", 
+          data = npi3)
+aggregate(after_minNPi ~ spike, FUN = "median", 
+          data = npi3)
+```
+
+# **Next Steps**
+* Control for Covariates - Medications, sex, age, race?
+* Secondary Hypotheses: Timing of ICP measurements (?), NPi before AND after ICP (make sure the code is right)
+
+
+
