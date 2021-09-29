@@ -4,7 +4,7 @@
 ## Objective
 To evaluate the temporal relationships between intracranial pressure (ICP) and pupil reactivity in critically ill patients. 
 
-Leveraging data from two intensive care units in the Boston area, this study evaluates trends in ICP and pupil metrics in patients with traumatic brain injuries, intraparenchymal hemorrhage, and aneurysmal subarachnoid hemorrhage. Pupil data was recorded using Quantiative Pupillometers from **[NeurOptics](https://neuroptics.com/)**.
+Leveraging data from two intensive care units in the Boston area, this study evaluates trends in ICP and pupil metrics in patients with traumatic brain injuries, intraparenchymal hemorrhage, and aneurysmal subarachnoid hemorrhage. Pupil data was recorded using Quantitative Pupillometers from **[NeurOptics](https://neuroptics.com/)**.
 
 The scripts in this repository clean and aggreagte ICP and pupillometry data in order to facilitate statistical analysis of the trends of these two physiological biomarkers and associated patient health outcomes.
 
@@ -14,9 +14,9 @@ The scripts in this repository clean and aggreagte ICP and pupillometry data in 
 
 ## Perform the Analysis
 
-Currently, raw data is stored privately in the Ong Lab. If to have access to the data, the respository can be copied and run locally. 
+Currently, raw data is stored privately in the Ong Lab. If to have access to the data, this respository can be copied and run locally. 
 
-Clone this repository to your local system by typing the following into your terminal/shell:
+Clone this repository to your local system by pasting the following into your terminal/shell:
 
 ````
 git clone https://github.com/meghutch/ICP-NPI.git
