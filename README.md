@@ -10,7 +10,7 @@ The scripts in this repository clean and aggreagte ICP and pupillometry data in 
 
 ## Exploratory Analysis
 
-**[View Exploratory Analysis](https://meghutch.github.io/ICP-NPi/NPi_and_ICP_Analysis.html)**
+**[View Exploratory Analysis](https://meghutch.github.io/projects/ICP-NPi/NPI_and_ICP_Analysis.html)**
 
 ## Perform the Analysis
 
